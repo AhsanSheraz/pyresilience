@@ -1,8 +1,11 @@
 # pyresilience
 
 [![CI](https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/AhsanSheraz/pyresilience/graph/badge.svg)](https://codecov.io/gh/AhsanSheraz/pyresilience)
 [![PyPI](https://img.shields.io/pypi/v/pyresilience)](https://pypi.org/project/pyresilience/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/pyresilience)](https://pypi.org/project/pyresilience/)
 [![Python](https://img.shields.io/pypi/pyversions/pyresilience)](https://pypi.org/project/pyresilience/)
+[![Documentation](https://readthedocs.org/projects/pyresilience/badge/?version=latest)](https://pyresilience.readthedocs.io/en/latest/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Unified resilience patterns for Python** — retry, circuit breaker, timeout, fallback, bulkhead, rate limiter, and cache in one decorator. Python's [Resilience4j](https://resilience4j.readme.io/).
@@ -26,7 +29,9 @@ Python has `tenacity` for retry, `pybreaker` for circuit breaking, and `wrapt_ti
 ## Install
 
 ```bash
-pip install pyresilience
+pip install pyresilience        # pip
+uv pip install pyresilience     # uv
+poetry add pyresilience         # poetry
 
 # Optional: faster event loop + JSON serialization
 pip install pyresilience[fast]

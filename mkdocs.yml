@@ -1,6 +1,6 @@
 site_name: pyresilience
 site_url: https://pyresilience.readthedocs.io/
-site_description: Unified resilience patterns for Python
+site_description: "Unified resilience patterns for Python — Python's Resilience4j"
 site_author: Ahsan Sheraz
 repo_url: https://github.com/AhsanSheraz/pyresilience
 repo_name: AhsanSheraz/pyresilience
@@ -10,22 +10,45 @@ theme:
   palette:
     - scheme: default
       primary: deep-purple
+      accent: amber
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
       primary: deep-purple
+      accent: amber
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
     - content.code.copy
+    - content.tabs.link
     - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - toc.follow
 
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Usage: usage.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Comparison: getting-started/comparison.md
+  - Core Modules:
+      - CircuitBreaker: core/circuitbreaker.md
+      - Retry: core/retry.md
+      - Bulkhead: core/bulkhead.md
+      - TimeLimiter: core/timelimiter.md
+      - RateLimiter: core/ratelimiter.md
+      - Cache: core/cache.md
+  - Advanced:
+      - Registry: advanced/registry.md
+      - Presets: advanced/presets.md
+      - Observability: advanced/observability.md
+      - Combining Patterns: advanced/combining.md
+      - Performance: advanced/performance.md
   - API Reference: api.md
   - Contributing: contributing.md
   - Changelog: changelog.md
@@ -36,5 +59,11 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.inlinehilite
   - admonition
   - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true

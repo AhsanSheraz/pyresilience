@@ -1,0 +1,107 @@
+# TimeLimiter (Timeout)
+
+The time limiter pattern enforces a maximum execution time for each call. If the call exceeds the timeout, it is cancelled and a `TimeoutError` is raised.
+
+## Concepts
+
+The timeout wraps each individual call attempt (not the total time across retries):
+
+```
+@resilient(retry=RetryConfig(max_attempts=3), timeout=TimeoutConfig(seconds=5))
+
+Attempt 1: [─── 5s max ───] TIMEOUT!
+Attempt 2: [── 3s ──] SUCCESS!
+```
+
+### Implementation
+
+| Mode | How it works |
+|------|-------------|
+| **Sync** | Runs the function in a thread pool, uses `future.result(timeout=...)` |
+| **Async** | Uses `asyncio.wait_for(coro, timeout=...)` |
+
+## Configuration
+
+```python
+from pyresilience import TimeoutConfig
+
+config = TimeoutConfig(
+    seconds=30.0,  # Maximum execution time per call
+)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `seconds` | `float` | `30.0` | Maximum time in seconds before the call is aborted |
+
+## Usage
+
+### Basic Timeout
+
+```python
+from pyresilience import resilient, TimeoutConfig
+
+@resilient(timeout=TimeoutConfig(seconds=5.0))
+def slow_operation() -> dict:
+    return requests.get("https://slow-api.example.com").json()
+```
+
+### With Retry
+
+Each retry attempt gets its own timeout:
+
+```python
+@resilient(
+    retry=RetryConfig(max_attempts=3, delay=1.0),
+    timeout=TimeoutConfig(seconds=10),
+)
+def call_api() -> dict:
+    return requests.get("https://api.example.com").json()
+```
+
+Total maximum time: 3 attempts * 10s timeout + 2 delays = ~32s worst case.
+
+### Async Timeout
+
+```python
+@resilient(timeout=TimeoutConfig(seconds=5.0))
+async def async_fetch(url: str) -> dict:
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            return await resp.json()
+```
+
+### Strict Timeout (Fail Fast)
+
+For latency-sensitive paths:
+
+```python
+@resilient(timeout=TimeoutConfig(seconds=1.0))
+def cache_lookup(key: str) -> dict:
+    return redis_client.get(key)
+```
+
+## Events
+
+| Event | When |
+|-------|------|
+| `EventType.TIMEOUT` | A call exceeded the configured timeout |
+
+```python
+def on_event(event):
+    if event.event_type == EventType.TIMEOUT:
+        print(f"{event.function_name} timed out: {event.detail}")
+        # detail contains "exceeded {seconds}s"
+```
+
+## Exception
+
+```python
+try:
+    result = slow_function()
+except TimeoutError as e:
+    print(e)  # "slow_function exceeded timeout of 5.0s"
+```
+
+!!! note
+    pyresilience raises `builtins.TimeoutError`, not `asyncio.TimeoutError`. This is consistent across sync and async modes.
