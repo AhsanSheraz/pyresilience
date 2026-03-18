@@ -183,7 +183,15 @@ print(metrics.summary())
 
 ## Documentation
 
-Full docs at [pyresilience.readthedocs.io](https://pyresilience.readthedocs.io/)
+For comprehensive guides, API reference, and advanced usage:
+
+**[Read the full documentation at pyresilience.readthedocs.io](https://pyresilience.readthedocs.io/)**
+
+- [Getting Started](https://pyresilience.readthedocs.io/en/latest/getting-started/quickstart/) — Installation, quick start, comparison with other libraries
+- [Core Modules](https://pyresilience.readthedocs.io/en/latest/core/circuitbreaker/) — Deep dive into each resilience pattern (CircuitBreaker, Retry, Bulkhead, TimeLimiter, RateLimiter, Cache)
+- [Advanced](https://pyresilience.readthedocs.io/en/latest/advanced/registry/) — Registry, presets, observability, combining patterns, framework integrations (FastAPI, Django, Flask), performance tuning
+- [API Reference](https://pyresilience.readthedocs.io/en/latest/api/) — Complete configuration reference for all patterns
+- [Examples](https://github.com/AhsanSheraz/pyresilience/tree/main/examples) — Real-world usage examples
 
 ## License
 
