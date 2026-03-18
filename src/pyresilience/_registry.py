@@ -79,15 +79,15 @@ class ResilienceRegistry:
         if is_async:
             from pyresilience._executor import _AsyncExecutor
 
-            executor = _AsyncExecutor(config)
+            result: Any = _AsyncExecutor(config)
         else:
             from pyresilience._executor import _SyncExecutor
 
-            executor = _SyncExecutor(config)
+            result = _SyncExecutor(config)
 
         with self._lock:
-            self._executors[key] = executor
-        return executor
+            self._executors[key] = result
+        return result
 
     def decorator(self, name: str) -> Callable[[F], F]:
         """Create a decorator that applies the named resilience config.
