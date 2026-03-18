@@ -38,6 +38,7 @@ jobs:
       - run: pytest -v --cov=pyresilience --cov-branch --cov-report=xml --junitxml=junit.xml --cov-fail-under=95
       - uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
           fail_ci_if_error: false
 

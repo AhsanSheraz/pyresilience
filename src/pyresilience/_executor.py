@@ -10,7 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional, TypeVar
 
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead, BulkheadFullError
+from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
+from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
 from pyresilience._types import (
     CircuitBreakerConfig,
     CircuitState,
@@ -82,15 +84,31 @@ class _SyncExecutor:
         self.config = config
         self.circuit_breaker: Optional[CircuitBreaker] = None
         self.bulkhead: Optional[Bulkhead] = None
+        self.rate_limiter: Optional[RateLimiter] = None
+        self.cache: Optional[ResultCache] = None
 
         if config.circuit_breaker:
             self.circuit_breaker = CircuitBreaker(config.circuit_breaker)
         if config.bulkhead:
             self.bulkhead = Bulkhead(config.bulkhead)
+        if config.rate_limiter:
+            self.rate_limiter = RateLimiter(config.rate_limiter)
+        if config.cache:
+            self.cache = ResultCache(config.cache)
 
     def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         func_name = getattr(func, "__name__", str(func))
         listeners = self.config.listeners
+
+        # Cache check
+        cache_key: Optional[str] = None
+        if self.cache:
+            cache_key = ResultCache.make_key(*args, **kwargs)
+            cached = self.cache.get(cache_key)
+            if cached is not _SENTINEL:
+                _emit(listeners, EventType.CACHE_HIT, func_name)
+                return cached
+            _emit(listeners, EventType.CACHE_MISS, func_name)
 
         # Circuit breaker check
         if self.circuit_breaker and not self.circuit_breaker.allow_request():
@@ -101,6 +119,16 @@ class _SyncExecutor:
                 return _apply_fallback(self.config.fallback, exc)
             raise RuntimeError("Circuit breaker is open")
 
+        # Rate limiter check
+        if self.rate_limiter and not self.rate_limiter.acquire():
+            _emit(listeners, EventType.RATE_LIMITED, func_name)
+            if self.config.fallback:
+                _emit(listeners, EventType.FALLBACK_USED, func_name)
+                return _apply_fallback(
+                    self.config.fallback, RateLimitExceededError("Rate limit exceeded")
+                )
+            raise RateLimitExceededError("Rate limit exceeded")
+
         # Bulkhead acquire
         if self.bulkhead and not self.bulkhead.acquire():
             _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
@@ -110,7 +138,11 @@ class _SyncExecutor:
             raise BulkheadFullError("Bulkhead full")
 
         try:
-            return self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
+            result = self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
+            # Store in cache on success
+            if self.cache and cache_key is not None:
+                self.cache.put(cache_key, result)
+            return result
         finally:
             if self.bulkhead:
                 self.bulkhead.release()
@@ -226,15 +258,31 @@ class _AsyncExecutor:
         self.config = config
         self.circuit_breaker: Optional[CircuitBreaker] = None
         self.bulkhead: Optional[AsyncBulkhead] = None
+        self.rate_limiter: Optional[AsyncRateLimiter] = None
+        self.cache: Optional[AsyncResultCache] = None
 
         if config.circuit_breaker:
             self.circuit_breaker = CircuitBreaker(config.circuit_breaker)
         if config.bulkhead:
             self.bulkhead = AsyncBulkhead(config.bulkhead)
+        if config.rate_limiter:
+            self.rate_limiter = AsyncRateLimiter(config.rate_limiter)
+        if config.cache:
+            self.cache = AsyncResultCache(config.cache)
 
     async def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         func_name = getattr(func, "__name__", str(func))
         listeners = self.config.listeners
+
+        # Cache check
+        cache_key: Optional[str] = None
+        if self.cache:
+            cache_key = AsyncResultCache.make_key(*args, **kwargs)
+            cached = self.cache.get(cache_key)
+            if cached is not _SENTINEL:
+                _emit(listeners, EventType.CACHE_HIT, func_name)
+                return cached
+            _emit(listeners, EventType.CACHE_MISS, func_name)
 
         # Circuit breaker check
         if self.circuit_breaker and not self.circuit_breaker.allow_request():
@@ -244,6 +292,18 @@ class _AsyncExecutor:
                 exc = RuntimeError("Circuit breaker is open")
                 return _apply_fallback(self.config.fallback, exc)
             raise RuntimeError("Circuit breaker is open")
+
+        # Rate limiter check
+        if self.rate_limiter:
+            acquired = await self.rate_limiter.acquire()
+            if not acquired:
+                _emit(listeners, EventType.RATE_LIMITED, func_name)
+                if self.config.fallback:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(
+                        self.config.fallback, RateLimitExceededError("Rate limit exceeded")
+                    )
+                raise RateLimitExceededError("Rate limit exceeded")
 
         # Bulkhead acquire
         if self.bulkhead:
@@ -256,7 +316,11 @@ class _AsyncExecutor:
                 raise BulkheadFullError("Bulkhead full")
 
         try:
-            return await self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
+            result = await self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
+            # Store in cache on success
+            if self.cache and cache_key is not None:
+                self.cache.put(cache_key, result)
+            return result
         finally:
             if self.bulkhead:
                 self.bulkhead.release()

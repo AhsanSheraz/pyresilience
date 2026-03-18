@@ -9,8 +9,10 @@ from typing import Any, Callable, Optional, TypeVar, overload
 from pyresilience._executor import _AsyncExecutor, _SyncExecutor
 from pyresilience._types import (
     BulkheadConfig,
+    CacheConfig,
     CircuitBreakerConfig,
     FallbackConfig,
+    RateLimiterConfig,
     ResilienceConfig,
     ResilienceListener,
     RetryConfig,
@@ -32,6 +34,8 @@ def resilient(
     circuit_breaker: Optional[CircuitBreakerConfig] = ...,
     fallback: Optional[FallbackConfig] = ...,
     bulkhead: Optional[BulkheadConfig] = ...,
+    rate_limiter: Optional[RateLimiterConfig] = ...,
+    cache: Optional[CacheConfig] = ...,
     listeners: Optional[list[ResilienceListener]] = ...,
 ) -> Callable[[F], F]: ...
 
@@ -44,6 +48,8 @@ def resilient(
     circuit_breaker: Optional[CircuitBreakerConfig] = None,
     fallback: Optional[FallbackConfig] = None,
     bulkhead: Optional[BulkheadConfig] = None,
+    rate_limiter: Optional[RateLimiterConfig] = None,
+    cache: Optional[CacheConfig] = None,
     listeners: Optional[list[ResilienceListener]] = None,
 ) -> Any:
     """Decorator that applies resilience patterns to a function.
@@ -65,6 +71,8 @@ def resilient(
         circuit_breaker: Circuit breaker configuration.
         fallback: Fallback configuration for graceful degradation.
         bulkhead: Bulkhead configuration for concurrency limiting.
+        rate_limiter: Rate limiter configuration for call rate limiting.
+        cache: Cache configuration for result caching.
         listeners: List of callbacks to receive resilience events.
     """
     config = ResilienceConfig(
@@ -73,6 +81,8 @@ def resilient(
         circuit_breaker=circuit_breaker,
         fallback=fallback,
         bulkhead=bulkhead,
+        rate_limiter=rate_limiter,
+        cache=cache,
         listeners=listeners or [],
     )
 

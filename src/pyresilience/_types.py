@@ -26,6 +26,9 @@ class EventType(enum.Enum):
     CIRCUIT_CLOSED = "circuit_closed"
     FALLBACK_USED = "fallback_used"
     BULKHEAD_REJECTED = "bulkhead_rejected"
+    RATE_LIMITED = "rate_limited"
+    CACHE_HIT = "cache_hit"
+    CACHE_MISS = "cache_miss"
     SUCCESS = "success"
     FAILURE = "failure"
 
@@ -122,6 +125,34 @@ class BulkheadConfig:
 
 
 @dataclass
+class RateLimiterConfig:
+    """Configuration for rate limiting behavior.
+
+    Args:
+        max_calls: Maximum number of calls allowed per period.
+        period: Time period in seconds.
+        max_wait: Maximum seconds to wait for a token. 0 means fail immediately.
+    """
+
+    max_calls: int = 10
+    period: float = 1.0
+    max_wait: float = 0.0
+
+
+@dataclass
+class CacheConfig:
+    """Configuration for result caching behavior.
+
+    Args:
+        max_size: Maximum number of cached entries (LRU eviction).
+        ttl: Time-to-live in seconds. 0 means no expiration.
+    """
+
+    max_size: int = 256
+    ttl: float = 300.0
+
+
+@dataclass
 class ResilienceConfig:
     """Combined resilience configuration for the @resilient decorator.
 
@@ -133,4 +164,6 @@ class ResilienceConfig:
     circuit_breaker: Optional[CircuitBreakerConfig] = None
     fallback: Optional[FallbackConfig] = None
     bulkhead: Optional[BulkheadConfig] = None
+    rate_limiter: Optional[RateLimiterConfig] = None
+    cache: Optional[CacheConfig] = None
     listeners: list[ResilienceListener] = field(default_factory=list)

@@ -28,8 +28,10 @@ from typing import Any, Optional, Sequence, Type
 
 from pyresilience._types import (
     BulkheadConfig,
+    CacheConfig,
     CircuitBreakerConfig,
     FallbackConfig,
+    RateLimiterConfig,
     ResilienceListener,
     RetryConfig,
     TimeoutConfig,
@@ -44,6 +46,8 @@ def http_policy(
     circuit_failure_threshold: int = 5,
     circuit_recovery_seconds: float = 30.0,
     max_concurrent: Optional[int] = None,
+    rate_limit: Optional[RateLimiterConfig] = None,
+    cache: Optional[CacheConfig] = None,
     fallback: Optional[FallbackConfig] = None,
     listeners: Optional[list[ResilienceListener]] = None,
     retry_on: Optional[Sequence[Type[BaseException]]] = None,
@@ -86,6 +90,10 @@ def http_policy(
     }
     if max_concurrent is not None:
         policy["bulkhead"] = BulkheadConfig(max_concurrent=max_concurrent)
+    if rate_limit is not None:
+        policy["rate_limiter"] = rate_limit
+    if cache is not None:
+        policy["cache"] = cache
     if fallback is not None:
         policy["fallback"] = fallback
     if listeners is not None:
