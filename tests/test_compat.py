@@ -53,10 +53,11 @@ class TestCompat:
             assert install_uvloop() is False
 
     def test_install_uvloop_handles_exception(self) -> None:
-        with mock.patch("pyresilience._compat.has_uvloop", return_value=True):
-            with mock.patch.dict("sys.modules", {"uvloop": None}):
-                result = install_uvloop()
-                assert isinstance(result, bool)
+        patch_uvloop = mock.patch("pyresilience._compat.has_uvloop", return_value=True)
+        patch_modules = mock.patch.dict("sys.modules", {"uvloop": None})
+        with patch_uvloop, patch_modules:
+            result = install_uvloop()
+            assert isinstance(result, bool)
 
     def test_get_json_dumps_falls_back_to_stdlib(self) -> None:
         with mock.patch("pyresilience._compat.has_orjson", return_value=False):
@@ -68,9 +69,9 @@ class TestCompat:
     def test_get_json_dumps_uses_orjson_when_available(self) -> None:
         mock_orjson = mock.MagicMock()
         mock_orjson.dumps.return_value = b'{"test":1}'
-
-        with mock.patch("pyresilience._compat.has_orjson", return_value=True):
-            with mock.patch.dict("sys.modules", {"orjson": mock_orjson}):
-                dumps = get_json_dumps()
-                result = dumps({"test": 1})
-                mock_orjson.dumps.assert_called_once()
+        patch_orjson = mock.patch("pyresilience._compat.has_orjson", return_value=True)
+        patch_modules = mock.patch.dict("sys.modules", {"orjson": mock_orjson})
+        with patch_orjson, patch_modules:
+            dumps = get_json_dumps()
+            dumps({"test": 1})
+            mock_orjson.dumps.assert_called_once()
