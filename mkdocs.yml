@@ -48,6 +48,7 @@ nav:
       - Presets: advanced/presets.md
       - Observability: advanced/observability.md
       - Combining Patterns: advanced/combining.md
+      - Framework Integrations: advanced/frameworks.md
       - Performance: advanced/performance.md
   - API Reference: api.md
   - Contributing: contributing.md

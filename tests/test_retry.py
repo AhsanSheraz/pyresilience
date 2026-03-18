@@ -69,8 +69,8 @@ class TestRetrySync:
         result = fails_then_ok()
         elapsed = time.monotonic() - start
         assert result == "done"
-        # delay=0.05 + delay=0.1 = 0.15s minimum
-        assert elapsed >= 0.14
+        # delay=0.05 + delay=0.1 = 0.15s minimum (use 0.13 for Windows timer precision)
+        assert elapsed >= 0.13
 
     def test_events_emitted(self) -> None:
         events: list[ResilienceEvent] = []
