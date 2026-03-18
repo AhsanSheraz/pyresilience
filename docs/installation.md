@@ -6,6 +6,14 @@
 pip install pyresilience
 ```
 
+## With performance backends
+
+```bash
+pip install pyresilience[fast]
+```
+
+This installs `uvloop` (C-based event loop, Linux/macOS only) and `orjson` (Rust-based JSON serialization) for faster async operations and structured logging.
+
 ## uv
 
 ```bash
