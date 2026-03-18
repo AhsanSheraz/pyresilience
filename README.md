@@ -26,6 +26,28 @@ Python has `tenacity` for retry, `pybreaker` for circuit breaking, and `wrapt_ti
 | Cache | `CacheConfig` | Complete |
 | Registry | `ResilienceRegistry` | Complete |
 
+## Python Ecosystem Comparison
+
+| Feature | pyresilience | tenacity | backoff | pybreaker | stamina | aiobreaker |
+|---------|:----------:|:--------:|:-------:|:---------:|:-------:|:----------:|
+| Retry | Yes | Yes | Yes | - | Yes | - |
+| Circuit Breaker | Yes | - | - | Yes | - | Yes |
+| Timeout | Yes | - | - | - | - | - |
+| Fallback | Yes | - | - | - | - | - |
+| Bulkhead | Yes | - | - | - | - | - |
+| Rate Limiter | Yes | - | - | - | - | - |
+| Cache | Yes | - | - | - | - | - |
+| Registry | Yes | - | - | - | - | - |
+| Unified API | Yes | - | - | - | - | - |
+| Async | Yes | Yes | Yes | - | Yes | Yes |
+| Zero Deps | Yes | Yes | - | - | - | - |
+| Type-Safe | Yes | Partial | Partial | - | Yes | - |
+| Presets | Yes | - | - | - | - | - |
+| Observability | Yes | - | - | - | - | - |
+| Framework Integrations | Yes | - | - | - | - | - |
+
+> **pyresilience** is the only Python library that combines all resilience patterns in a single decorator with zero dependencies. Other libraries solve individual problems well — pyresilience unifies them.
+
 ## Install
 
 ```bash
