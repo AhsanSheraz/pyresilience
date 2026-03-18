@@ -1,0 +1,40 @@
+site_name: pyresilience
+site_url: https://pyresilience.readthedocs.io/
+site_description: Unified resilience patterns for Python
+site_author: Ahsan Sheraz
+repo_url: https://github.com/AhsanSheraz/pyresilience
+repo_name: AhsanSheraz/pyresilience
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep-purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep-purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Usage: usage.md
+  - API Reference: api.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details

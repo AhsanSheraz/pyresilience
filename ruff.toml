@@ -1,0 +1,30 @@
+target-version = "py39"
+line-length = 100
+src = ["src", "tests"]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "UP006",  # Use `type` instead of `Type` (not available in 3.9)
+    "UP007",  # Use X | Y for union types (not available in 3.9)
+    "UP035",  # Import from `collections.abc` (use typing for 3.9 compat)
+    "UP045",  # Use X | None instead of Optional (not available in 3.9)
+]
+
+[lint.isort]
+known-first-party = ["pyresilience"]
+
+[format]
+quote-style = "double"
+indent-style = "space"

@@ -1,0 +1,1 @@
+# No runtime dependencies - pyresilience is zero-dependency
