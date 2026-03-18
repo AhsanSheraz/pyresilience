@@ -203,10 +203,12 @@ class _SyncExecutor:
             return func(*args, **kwargs)
 
         # Run with timeout using a thread pool
+        import concurrent.futures
+
         future = _timeout_pool.submit(func, *args, **kwargs)
         try:
             return future.result(timeout=timeout_cfg.seconds)
-        except TimeoutError:
+        except (TimeoutError, concurrent.futures.TimeoutError):
             future.cancel()
             _emit(
                 listeners,

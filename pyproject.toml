@@ -49,6 +49,10 @@ packages = ["src/pyresilience"]
 include = ["src/pyresilience", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [project.optional-dependencies]
+fast = [
+    "uvloop>=0.17.0; sys_platform != 'win32'",
+    "orjson>=3.9.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",

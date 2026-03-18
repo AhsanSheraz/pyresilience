@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 
 import pytest
@@ -15,7 +14,6 @@ from pyresilience import (
     FallbackConfig,
     ResilienceEvent,
     RetryConfig,
-    TimeoutConfig,
     resilient,
 )
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead, BulkheadFullError
@@ -88,6 +86,7 @@ class TestAsyncExecutorEdgeCases:
     @pytest.mark.asyncio
     async def test_async_circuit_breaker_with_fallback(self) -> None:
         """Test async circuit breaker with fallback when open."""
+
         @resilient(
             circuit_breaker=CircuitBreakerConfig(failure_threshold=1, recovery_timeout=10),
             fallback=FallbackConfig(handler="fallback_value"),
@@ -102,6 +101,7 @@ class TestAsyncExecutorEdgeCases:
     @pytest.mark.asyncio
     async def test_async_bulkhead_rejects_with_fallback(self) -> None:
         """Test async bulkhead rejection with fallback."""
+
         @resilient(
             bulkhead=BulkheadConfig(max_concurrent=1, max_wait=0),
             fallback=FallbackConfig(handler="busy"),
@@ -125,6 +125,7 @@ class TestAsyncExecutorEdgeCases:
     @pytest.mark.asyncio
     async def test_async_bulkhead_rejects_without_fallback(self) -> None:
         """Test async bulkhead rejection raises error."""
+
         @resilient(bulkhead=BulkheadConfig(max_concurrent=1, max_wait=0))
         async def slow() -> str:
             await asyncio.sleep(0.3)
