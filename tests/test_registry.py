@@ -189,3 +189,26 @@ class TestRegistryExecutorExposure:
 
         assert hasattr(my_func, "_executor")
         assert isinstance(my_func._executor, _AsyncExecutor)
+
+
+class TestRegistryGetExecutor:
+    def test_get_executor_returns_none_before_decoration(self) -> None:
+        registry = ResilienceRegistry()
+        registry.register("api", ResilienceConfig(retry=RetryConfig(max_attempts=1)))
+        assert registry.get_executor("api") is None
+
+    def test_get_executor_returns_executor_after_decoration(self) -> None:
+        registry = ResilienceRegistry()
+        registry.register("api", ResilienceConfig(retry=RetryConfig(max_attempts=1)))
+
+        @registry.decorator("api")
+        def my_func() -> str:
+            return "ok"
+
+        executor = registry.get_executor("api")
+        assert executor is not None
+        assert executor is my_func._executor  # type: ignore[attr-defined]
+
+    def test_get_executor_returns_none_for_unknown_name(self) -> None:
+        registry = ResilienceRegistry()
+        assert registry.get_executor("nonexistent") is None

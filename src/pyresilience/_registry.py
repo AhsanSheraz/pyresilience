@@ -126,6 +126,15 @@ class ResilienceRegistry:
 
         return wrapper
 
+    def get_executor(self, name: str) -> Any:
+        """Get a cached executor for a named config, if one exists.
+
+        Checks both sync and async executors. Returns None if no executor
+        has been created yet for this name.
+        """
+        with self._lock:
+            return self._executors.get(f"{name}:sync") or self._executors.get(f"{name}:async")
+
     @property
     def names(self) -> list[str]:
         """List all registered config names."""

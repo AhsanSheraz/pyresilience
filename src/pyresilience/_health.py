@@ -27,13 +27,7 @@ def health_check(registry: ResilienceRegistry) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     for name in registry.names:
         entry: Dict[str, Any] = {}
-        # Check sync executor
-        sync_key = f"{name}:sync"
-        async_key = f"{name}:async"
-
-        executor = None
-        with registry._lock:
-            executor = registry._executors.get(sync_key) or registry._executors.get(async_key)
+        executor = registry.get_executor(name)
 
         if executor is not None:
             cb = getattr(executor, "_circuit_breaker", None)
