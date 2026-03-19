@@ -10,9 +10,6 @@ if TYPE_CHECKING:
     from pyresilience._types import BulkheadConfig
 
 
-from pyresilience._exceptions import BulkheadFullError as BulkheadFullError
-
-
 class Bulkhead:
     """Thread-safe bulkhead for sync code.
 

@@ -63,3 +63,24 @@ class TestTimeoutAsync:
 
         with pytest.raises(TimeoutError):
             await slow_func()
+
+
+class TestCustomPoolSize:
+    def test_custom_timeout_pool_size(self) -> None:
+        """Test custom ThreadPoolExecutor pool size."""
+
+        @resilient(timeout=TimeoutConfig(seconds=5.0, pool_size=2))
+        def fast() -> str:
+            return "ok"
+
+        assert fast() == "ok"
+
+
+class TestTimeoutConfigValidation:
+    def test_seconds_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="seconds must be > 0"):
+            TimeoutConfig(seconds=0)
+
+    def test_pool_size_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="pool_size must be >= 1"):
+            TimeoutConfig(pool_size=0)

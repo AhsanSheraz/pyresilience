@@ -12,17 +12,25 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import logging
+import os
 import random
+import threading
 import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Callable, Optional, Type
 
-from pyresilience._bulkhead import AsyncBulkhead, Bulkhead, BulkheadFullError
+from pyresilience._bulkhead import AsyncBulkhead, Bulkhead
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
-from pyresilience._exceptions import CircuitOpenError, ResilienceTimeoutError
+from pyresilience._exceptions import (
+    BulkheadFullError,
+    CircuitOpenError,
+    ResilienceTimeoutError,
+)
+from pyresilience._logging import _call_id_counter, call_id_var
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
 from pyresilience._types import (
     CircuitState,
@@ -34,8 +42,11 @@ from pyresilience._types import (
     RetryConfig,
 )
 
-# Shared thread pool for sync timeouts — reused across executors with default pool_size
-_default_timeout_pool = ThreadPoolExecutor(max_workers=4)
+# Module-level logger for listener error reporting
+_logger = logging.getLogger("pyresilience")
+
+# Shared thread pool for sync timeouts — sized like Python 3.13's default
+_default_timeout_pool = ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() or 1) + 4))
 
 # Track custom pools for cleanup at exit
 _custom_pools: list[weakref.ref[ThreadPoolExecutor]] = []
@@ -76,19 +87,24 @@ def _emit(
         detail=detail,
     )
     for listener in listeners:
-        try:  # noqa: SIM105 — bare try/except is faster than contextlib.suppress
+        try:
             listener(event)
         except Exception:
-            pass
+            _logger.warning("Listener %r raised an exception", listener, exc_info=True)
 
 
 def _compute_delay(retry_cfg: RetryConfig, attempt: int) -> float:
-    """Calculate retry delay with exponential backoff and optional full jitter."""
+    """Calculate retry delay with exponential backoff and optional jitter.
+
+    When jitter is enabled, the delay is randomized but never falls below 10%
+    of the base (pre-jitter) delay. This prevents zero-delay retry storms.
+    """
     delay = retry_cfg.delay * (retry_cfg.backoff_factor ** (attempt - 1))
     if delay > retry_cfg.max_delay:
         delay = retry_cfg.max_delay
     if retry_cfg.jitter:
-        delay = _random() * delay
+        base_delay = delay
+        delay = max(base_delay * 0.1, _random() * delay)
     return delay
 
 
@@ -157,7 +173,8 @@ class _SyncExecutor:
         )
 
         # Share global pool unless custom pool_size is configured
-        if config.timeout and config.timeout.pool_size != 4:
+        _default_pool_size = min(32, (os.cpu_count() or 1) + 4)
+        if config.timeout and config.timeout.pool_size != _default_pool_size:
             pool = ThreadPoolExecutor(max_workers=config.timeout.pool_size)
             self._timeout_pool: ThreadPoolExecutor = pool
             _register_custom_pool(pool)
@@ -174,6 +191,9 @@ class _SyncExecutor:
         self._cache: Optional[ResultCache] = ResultCache(config.cache) if config.cache else None
 
     def execute(self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any) -> Any:
+        # Set unique call ID for MetricsCollector latency tracking
+        call_id_var.set(next(_call_id_counter))
+
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
@@ -224,6 +244,9 @@ class _SyncExecutor:
                 return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
             raise BulkheadFullError("Bulkhead full")
 
+        # Track whether we currently hold the bulkhead slot
+        bulkhead_held = [bulkhead is not None]
+
         try:
             # Fast path: no retry, no timeout — direct call
             if self._fast_path:
@@ -232,14 +255,22 @@ class _SyncExecutor:
                 )
             else:
                 result = self._execute_with_retry(
-                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                    func,
+                    func_name,
+                    listeners,
+                    has_listeners,
+                    circuit_breaker,
+                    bulkhead,
+                    bulkhead_held,
+                    *args,
+                    **kwargs,
                 )
             if cache is not None and cache_key is not None:
                 cache.put(cache_key, result)
             return result
         finally:
-            if bulkhead is not None:
-                bulkhead.release()
+            if bulkhead_held[0]:
+                bulkhead.release()  # type: ignore[union-attr]
 
     def _execute_direct(
         self,
@@ -257,8 +288,7 @@ class _SyncExecutor:
         try:
             result = func(*args, **kwargs)
             if circuit_breaker is not None:
-                prev_state = circuit_breaker.state
-                new_state = circuit_breaker.record_success(0.0)
+                prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
                 if (
                     new_state == CircuitState.CLOSED
                     and prev_state != CircuitState.CLOSED
@@ -288,6 +318,8 @@ class _SyncExecutor:
         listeners: list[ResilienceListener],
         has_listeners: bool,
         circuit_breaker: Optional[CircuitBreaker],
+        bulkhead: Optional[Bulkhead],
+        bulkhead_held: list[bool],
         *args: Any,
         **kwargs: Any,
     ) -> Any:
@@ -305,6 +337,17 @@ class _SyncExecutor:
         call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
+            # Re-check circuit breaker before retry attempts
+            if attempt > 1 and circuit_breaker is not None and not circuit_breaker.allow_request():
+                if has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+                err = CircuitOpenError("Circuit breaker is open")
+                if fallback_cfg is not None and isinstance(err, fallback_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(fallback_cfg, err)
+                raise err
+
             try:
                 if track_duration:
                     call_start = time.monotonic()
@@ -329,7 +372,15 @@ class _SyncExecutor:
                                 detail=f"result predicate triggered, retrying in {delay:.2f}s",
                             )
                         if delay > 0:
+                            # Release bulkhead during retry sleep
+                            if bulkhead is not None and bulkhead_held[0]:
+                                bulkhead.release()
+                                bulkhead_held[0] = False
                             time.sleep(delay)
+                            if bulkhead is not None and not bulkhead_held[0]:
+                                if not bulkhead.acquire():
+                                    raise BulkheadFullError("Bulkhead full")
+                                bulkhead_held[0] = True
                         continue
                     # Last attempt: predicate matched but no retries left
                     if has_listeners:
@@ -343,8 +394,7 @@ class _SyncExecutor:
                     return result
 
                 if circuit_breaker is not None:
-                    prev_state = circuit_breaker.state
-                    new_state = circuit_breaker.record_success(duration)
+                    prev_state, new_state = circuit_breaker.record_success_atomic(duration)
                     if (
                         new_state == CircuitState.CLOSED
                         and prev_state != CircuitState.CLOSED
@@ -385,7 +435,15 @@ class _SyncExecutor:
                             error=exc,
                             detail=f"retrying in {delay:.2f}s",
                         )
+                    # Release bulkhead during retry sleep
+                    if bulkhead is not None and bulkhead_held[0]:
+                        bulkhead.release()
+                        bulkhead_held[0] = False
                     time.sleep(delay)
+                    if bulkhead is not None and not bulkhead_held[0]:
+                        if not bulkhead.acquire():
+                            raise BulkheadFullError("Bulkhead full") from exc
+                        bulkhead_held[0] = True
                     continue
 
                 # Retries exhausted
@@ -430,10 +488,16 @@ class _SyncExecutor:
         **kwargs: Any,
     ) -> Any:
         timeout_seconds = self._timeout_seconds
-        future = self._timeout_pool.submit(func, *args, **kwargs)
+        cancel_event = threading.Event()
+
+        def _wrapper() -> Any:
+            return func(*args, **kwargs)
+
+        future = self._timeout_pool.submit(_wrapper)
         try:
             return future.result(timeout=timeout_seconds)
-        except (TimeoutError, FuturesTimeoutError):
+        except (TimeoutError, FuturesTimeoutError) as exc:
+            cancel_event.set()
             future.cancel()
             if self._has_listeners:
                 _emit(
@@ -443,8 +507,10 @@ class _SyncExecutor:
                     detail=f"exceeded {timeout_seconds}s",
                 )
             raise ResilienceTimeoutError(
-                f"{func_name} exceeded timeout of {timeout_seconds}s",
-            ) from None
+                f"{func_name} exceeded timeout of {timeout_seconds}s. "
+                "Note: the underlying thread may still be running — "
+                "Python threads cannot be forcibly interrupted.",
+            ) from exc
 
 
 class _AsyncExecutor:
@@ -517,6 +583,9 @@ class _AsyncExecutor:
     async def execute(
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
+        # Set unique call ID for MetricsCollector latency tracking
+        call_id_var.set(next(_call_id_counter))
+
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
@@ -567,6 +636,9 @@ class _AsyncExecutor:
                 return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
             raise BulkheadFullError("Bulkhead full")
 
+        # Track whether we currently hold the bulkhead slot
+        bulkhead_held = [bulkhead is not None]
+
         try:
             if self._fast_path:
                 result = await self._execute_direct(
@@ -574,14 +646,22 @@ class _AsyncExecutor:
                 )
             else:
                 result = await self._execute_with_retry(
-                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                    func,
+                    func_name,
+                    listeners,
+                    has_listeners,
+                    circuit_breaker,
+                    bulkhead,
+                    bulkhead_held,
+                    *args,
+                    **kwargs,
                 )
             if cache is not None and cache_key is not None:
                 cache.put(cache_key, result)
             return result
         finally:
-            if bulkhead is not None:
-                bulkhead.release()
+            if bulkhead_held[0]:
+                bulkhead.release()  # type: ignore[union-attr]
 
     async def _execute_direct(
         self,
@@ -599,8 +679,7 @@ class _AsyncExecutor:
         try:
             result = await func(*args, **kwargs)
             if circuit_breaker is not None:
-                prev_state = circuit_breaker.state
-                new_state = circuit_breaker.record_success(0.0)
+                prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
                 if (
                     new_state == CircuitState.CLOSED
                     and prev_state != CircuitState.CLOSED
@@ -630,6 +709,8 @@ class _AsyncExecutor:
         listeners: list[ResilienceListener],
         has_listeners: bool,
         circuit_breaker: Optional[CircuitBreaker],
+        bulkhead: Optional[AsyncBulkhead],
+        bulkhead_held: list[bool],
         *args: Any,
         **kwargs: Any,
     ) -> Any:
@@ -648,6 +729,17 @@ class _AsyncExecutor:
         call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
+            # Re-check circuit breaker before retry attempts
+            if attempt > 1 and circuit_breaker is not None and not circuit_breaker.allow_request():
+                if has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+                err = CircuitOpenError("Circuit breaker is open")
+                if fallback_cfg is not None and isinstance(err, fallback_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(fallback_cfg, err)
+                raise err
+
             try:
                 if track_duration:
                     call_start = time.monotonic()
@@ -657,7 +749,7 @@ class _AsyncExecutor:
                         result = await asyncio.wait_for(
                             func(*args, **kwargs), timeout=timeout_seconds
                         )
-                    except asyncio.TimeoutError:
+                    except asyncio.TimeoutError as exc:
                         if has_listeners:
                             _emit(
                                 listeners,
@@ -667,7 +759,7 @@ class _AsyncExecutor:
                             )
                         raise ResilienceTimeoutError(
                             f"{func_name} exceeded timeout of {timeout_seconds}s"
-                        ) from None
+                        ) from exc
                 else:
                     result = await func(*args, **kwargs)
 
@@ -686,7 +778,15 @@ class _AsyncExecutor:
                                 detail=f"result predicate triggered, retrying in {delay:.2f}s",
                             )
                         if delay > 0:
+                            # Release bulkhead during retry sleep
+                            if bulkhead is not None and bulkhead_held[0]:
+                                bulkhead.release()
+                                bulkhead_held[0] = False
                             await asyncio.sleep(delay)
+                            if bulkhead is not None and not bulkhead_held[0]:
+                                if not await bulkhead.acquire():
+                                    raise BulkheadFullError("Bulkhead full")
+                                bulkhead_held[0] = True
                         continue
                     # Last attempt: predicate matched but no retries left
                     if has_listeners:
@@ -700,8 +800,7 @@ class _AsyncExecutor:
                     return result
 
                 if circuit_breaker is not None:
-                    prev_state = circuit_breaker.state
-                    new_state = circuit_breaker.record_success(duration)
+                    prev_state, new_state = circuit_breaker.record_success_atomic(duration)
                     if (
                         new_state == CircuitState.CLOSED
                         and prev_state != CircuitState.CLOSED
@@ -740,7 +839,15 @@ class _AsyncExecutor:
                             error=exc,
                             detail=f"retrying in {delay:.2f}s",
                         )
+                    # Release bulkhead during retry sleep
+                    if bulkhead is not None and bulkhead_held[0]:
+                        bulkhead.release()
+                        bulkhead_held[0] = False
                     await asyncio.sleep(delay)
+                    if bulkhead is not None and not bulkhead_held[0]:
+                        if not await bulkhead.acquire():
+                            raise BulkheadFullError("Bulkhead full") from exc
+                        bulkhead_held[0] = True
                     continue
 
                 if retry_cfg is not None and attempt >= max_attempts and has_listeners:

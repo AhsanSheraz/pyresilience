@@ -238,3 +238,115 @@ class TestFlaskIntegration:
         ext = Resilience()
         ext.init_app(mock_app)  # No config — should use default
         assert ext.executor is not None
+
+
+class TestDjangoConfigNaming:
+    def test_max_attempts_takes_precedence(self) -> None:
+        """Verify max_attempts is the primary config key."""
+        from unittest import mock
+
+        from pyresilience.contrib.django import ResilientMiddleware
+
+        with mock.patch.dict(
+            "pyresilience.contrib.django.__builtins__",
+            {},
+            clear=False,
+        ):
+            # Simulate Django settings with max_attempts
+            settings_mod = type("Settings", (), {"PYRESILIENCE_CONFIG": {"max_attempts": 5}})()
+            with (
+                mock.patch("pyresilience.contrib.django.settings", settings_mod, create=True),
+                mock.patch(
+                    "pyresilience.contrib.django.ResilientMiddleware._load_config"
+                ) as mock_load,
+            ):
+                from pyresilience._types import ResilienceConfig, RetryConfig
+
+                config = ResilienceConfig()
+                config.retry = RetryConfig(max_attempts=5)
+                mock_load.return_value = config
+                mw = ResilientMiddleware(lambda r: r)
+                executor = mw._get_executor()
+                assert executor._max_attempts == 5
+
+
+class TestDjangoLoadConfig:
+    def test_load_config_with_all_settings(self) -> None:
+        """Test Django _load_config with all settings keys."""
+        from unittest import mock
+
+        from pyresilience.contrib.django import ResilientMiddleware
+
+        mock_settings = mock.MagicMock()
+        mock_settings.PYRESILIENCE_CONFIG = {
+            "timeout_seconds": 15,
+            "circuit_failure_threshold": 5,
+            "circuit_recovery_seconds": 45,
+            "max_retries": 3,
+            "retry_delay": 0.5,
+        }
+
+        with (
+            mock.patch("pyresilience.contrib.django.settings", mock_settings, create=True),
+            mock.patch.dict(
+                "sys.modules",
+                {"django": mock.MagicMock(), "django.conf": mock.MagicMock()},
+            ),
+        ):
+            import sys
+
+            sys.modules["django.conf"].settings = mock_settings
+            config = ResilientMiddleware._load_config()
+
+        assert config.timeout is not None
+        assert config.timeout.seconds == 15
+        assert config.circuit_breaker is not None
+        assert config.circuit_breaker.failure_threshold == 5
+        assert config.retry is not None
+        assert config.retry.max_attempts == 3
+
+
+class TestFastapiMiddleware503:
+    @pytest.mark.asyncio
+    async def test_middleware_circuit_open_sends_503(self) -> None:
+        """Test middleware sends 503 when circuit is open."""
+        from pyresilience._types import CircuitBreakerConfig, ResilienceConfig
+        from pyresilience.contrib.fastapi import ResilientMiddleware
+
+        config = ResilienceConfig(
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=1, recovery_timeout=60),
+        )
+
+        call_count = 0
+
+        async def failing_app(scope: dict, receive: object, send: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        middleware = ResilientMiddleware(failing_app, config=config)
+
+        sent_messages: list[dict] = []
+
+        async def mock_send(msg: dict) -> None:
+            sent_messages.append(msg)
+
+        with pytest.raises(ValueError):
+            await middleware({"type": "http"}, None, mock_send)
+
+        await middleware({"type": "http"}, None, mock_send)
+        assert len(sent_messages) == 2
+        assert sent_messages[0]["status"] == 503
+
+    @pytest.mark.asyncio
+    async def test_middleware_non_circuit_error_reraises(self) -> None:
+        """Test non-circuit RuntimeError re-raises."""
+        from pyresilience.contrib.fastapi import ResilientMiddleware
+
+        async def error_app(scope: dict, receive: object, send: object) -> None:
+            raise RuntimeError("something else")
+
+        middleware = ResilientMiddleware(error_app)
+
+        with pytest.raises(RuntimeError, match="something else"):
+            await middleware({"type": "http"}, None, None)

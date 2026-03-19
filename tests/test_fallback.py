@@ -56,12 +56,14 @@ class TestFallbackSync:
         event_types = [e.event_type for e in events]
         assert EventType.FALLBACK_USED in event_types
 
-    def test_none_fallback_handler(self) -> None:
-        @resilient(fallback=FallbackConfig(handler=None))
-        def fails() -> None:
-            raise ValueError("boom")
+    def test_none_fallback_handler_raises_validation_error(self) -> None:
+        with pytest.raises(ValueError, match="requires a handler"):
+            FallbackConfig(handler=None)
 
-        assert fails() is None
+    def test_none_handler_allowed_with_empty_fallback_on(self) -> None:
+        # handler=None is valid when fallback_on is empty (no triggers)
+        cfg = FallbackConfig(handler=None, fallback_on=())
+        assert cfg.handler is None
 
 
 class TestFallbackAsync:
@@ -72,3 +74,20 @@ class TestFallbackAsync:
             raise ValueError("boom")
 
         assert await fails() == "async_default"
+
+    @pytest.mark.asyncio
+    async def test_async_fallback_used_event(self) -> None:
+        """Fallback_used event emitted in async."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            fallback=FallbackConfig(handler="fallback_val"),
+            listeners=[events.append],
+        )
+        async def fails() -> str:
+            raise ValueError("fail")
+
+        result = await fails()
+        assert result == "fallback_val"
+        event_types = [e.event_type for e in events]
+        assert EventType.FALLBACK_USED in event_types

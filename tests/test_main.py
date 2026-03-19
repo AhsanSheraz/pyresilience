@@ -21,3 +21,17 @@ def test_main_output(capsys: object) -> None:
 
     assert "pyresilience" in output
     assert f"v{pyresilience.__version__}" in output
+
+
+class TestMainModule:
+    def test_main_as_script(self) -> None:
+        """Test running as python -m pyresilience."""
+        import subprocess
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "-m", "pyresilience"],
+            capture_output=True,
+            text=True,
+        )
+        assert "pyresilience" in result.stdout

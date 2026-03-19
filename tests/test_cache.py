@@ -205,3 +205,44 @@ class TestCacheIntegration:
         time.sleep(0.1)
         my_func()  # expired, re-executes
         assert call_count == 2
+
+
+class TestCacheConfigValidation:
+    def test_max_size_must_be_positive(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="max_size must be >= 1"):
+            CacheConfig(max_size=0)
+
+    def test_max_size_negative_raises(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="max_size must be >= 1"):
+            CacheConfig(max_size=-1)
+
+    def test_ttl_negative_raises(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="ttl must be >= 0"):
+            CacheConfig(ttl=-1)
+
+    def test_ttl_zero_is_valid(self) -> None:
+        cfg = CacheConfig(ttl=0)
+        assert cfg.ttl == 0
+
+
+class TestCacheKeyUnhashable:
+    def test_unhashable_args_fallback_to_string_key(self) -> None:
+        """Unhashable args use string-based key."""
+        from pyresilience._cache import _make_cache_key
+
+        key = _make_cache_key([1, 2, 3])
+        assert isinstance(key, str)
+        assert "list" in key
+
+    def test_kwargs_uses_string_key(self) -> None:
+        """make_key with kwargs."""
+        from pyresilience._cache import _make_cache_key
+
+        key = _make_cache_key(1, name="test")
+        assert isinstance(key, str)

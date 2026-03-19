@@ -134,3 +134,91 @@ class TestBareDecorator:
         with pytest.raises(ValueError, match="no retry"):
             fails()
         assert call_count == 1
+
+
+class TestMaxDelayCap:
+    def test_max_delay_caps_computed_delay(self) -> None:
+        """Verify max_delay caps the computed backoff delay."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=10.0,
+                backoff_factor=10.0,
+                max_delay=0.01,
+                jitter=False,
+            ),
+        )
+        def flaky() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("fail")
+            return "ok"
+
+        result = flaky()
+        assert result == "ok"
+        assert call_count == 3
+
+
+class TestSyncRetryOnResultRetries:
+    def test_retry_on_result_retries_then_succeeds(self) -> None:
+        """Test retry_on_result retries and eventually returns good result."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                retry_on_result=lambda r: r == "bad",
+            ),
+            listeners=[events.append],
+        )
+        def eventually_good() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return "bad"
+            return "good"
+
+        result = eventually_good()
+        assert result == "good"
+        assert call_count == 3
+        event_types = [e.event_type for e in events]
+        assert EventType.RETRY in event_types
+
+    def test_retry_on_result_exhausted_emits_event(self) -> None:
+        """On last attempt, if predicate matches, RETRY_EXHAUSTED is emitted."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.001,
+                retry_on_result=lambda r: r == "bad",
+            ),
+            listeners=[events.append],
+        )
+        def always_bad() -> str:
+            return "bad"
+
+        result = always_bad()
+        assert result == "bad"
+        event_types = [e.event_type for e in events]
+        assert EventType.RETRY_EXHAUSTED in event_types
+
+
+class TestRetryConfigValidation:
+    def test_max_attempts_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="max_attempts must be >= 1"):
+            RetryConfig(max_attempts=0)
+
+    def test_delay_must_be_non_negative(self) -> None:
+        with pytest.raises(ValueError, match="delay must be >= 0"):
+            RetryConfig(delay=-1)
+
+    def test_max_delay_must_be_non_negative(self) -> None:
+        with pytest.raises(ValueError, match="max_delay must be >= 0"):
+            RetryConfig(max_delay=-1)

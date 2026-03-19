@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -175,3 +176,61 @@ class TestMetricsCollector:
 
         summary = metrics.summary()
         assert summary["fails"]["success_rate"] == 0.0
+
+
+class TestMetricsCollectorAsyncSafety:
+    @pytest.mark.asyncio
+    async def test_concurrent_async_calls_dont_collide(self) -> None:
+        """Verify async coroutines don't corrupt latency tracking via thread ID collision."""
+        from pyresilience import RetryConfig, resilient
+
+        metrics = MetricsCollector()
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=1, delay=0), listeners=[metrics])
+        async def slow_func() -> str:
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.01)
+            return "ok"
+
+        # Run multiple concurrent async calls
+        results = await asyncio.gather(slow_func(), slow_func(), slow_func())
+        assert all(r == "ok" for r in results)
+        assert call_count == 3
+
+        # All 3 calls should have latency tracked
+        summary = metrics.summary()
+        assert summary["slow_func"]["total_calls"] == 3
+
+    def test_bounded_latencies(self) -> None:
+        """Verify latencies are bounded to max 10,000 entries."""
+        metrics = MetricsCollector()
+        # Directly insert more than 10,000 entries
+        for i in range(11000):
+            metrics._latencies["test_func"].append(float(i))
+        assert len(metrics._latencies["test_func"]) == 10000
+        # Oldest entries should be evicted
+        assert metrics._latencies["test_func"][0] == 1000.0
+
+
+class TestLoggingLatencyTracking:
+    def test_latency_tracked_on_retry_then_success(self) -> None:
+        """Latency tracking works with retry+success."""
+        metrics = MetricsCollector()
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.01),
+            listeners=[metrics],
+        )
+        def retry_then_succeed() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        retry_then_succeed()
+        latencies = metrics.get_latencies()
+        assert len(latencies) > 0

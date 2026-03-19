@@ -172,3 +172,24 @@ class TestPresetAsync:
             return "async result"
 
         assert await async_query() == "async result"
+
+
+class TestStrictPolicyDocAccuracy:
+    def test_strict_policy_default_is_one_attempt(self) -> None:
+        """Verify strict_policy default max_attempts=1 means no retries."""
+        policy = strict_policy()
+        assert policy["retry"].max_attempts == 1
+
+
+class TestPresetsEdgeCoverage:
+    def test_http_policy_with_rate_limit_and_cache(self) -> None:
+        """Test http_policy with rate_limit and cache options."""
+        from pyresilience import CacheConfig, RateLimiterConfig
+        from pyresilience.presets import http_policy
+
+        policy = http_policy(
+            rate_limit=RateLimiterConfig(max_calls=100, period=1.0),
+            cache=CacheConfig(max_size=100, ttl=30),
+        )
+        assert "rate_limiter" in policy
+        assert "cache" in policy

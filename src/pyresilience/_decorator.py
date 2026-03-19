@@ -95,6 +95,7 @@ def resilient(
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return await executor.execute(fn, fn_name, *args, **kwargs)
 
+            async_wrapper._executor = executor  # type: ignore[attr-defined]
             return async_wrapper  # type: ignore[return-value]
         else:
             executor_sync = _SyncExecutor(config)
@@ -103,6 +104,7 @@ def resilient(
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
                 return executor_sync.execute(fn, fn_name, *args, **kwargs)
 
+            sync_wrapper._executor = executor_sync  # type: ignore[attr-defined]
             return sync_wrapper  # type: ignore[return-value]
 
     if func is not None:
