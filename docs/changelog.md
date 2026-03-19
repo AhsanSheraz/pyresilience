@@ -15,10 +15,10 @@
 - Cached module-level locals for `time.monotonic`, `random.random`, enum members
 - Inlined `isinstance()` checks, guarded event emission with `has_listeners` bool
 - Pre-computed rate (tokens/sec) in rate limiter
-- Decorator overhead: 0.53us (13x faster than tenacity at 7.02us)
-- Circuit breaker overhead: 0.97us
+- Decorator overhead: 0.56us (13x faster than tenacity at 7.31us)
+- Circuit breaker overhead: 1.25us
 - Memory reduced to 1,052KB per 1,000 decorated functions (53% less than tenacity)
-- Throughput: 235K ops/sec (2.9x tenacity)
+- Throughput: 231K ops/sec (3.0x tenacity)
 
 ### Fixes
 - Replaced deprecated `asyncio.iscoroutinefunction` with `inspect.iscoroutinefunction`

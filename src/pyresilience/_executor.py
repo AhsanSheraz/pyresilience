@@ -229,6 +229,7 @@ class _SyncExecutor:
         slow_call_duration = self._slow_call_duration
         track_duration = circuit_breaker is not None and slow_call_duration > 0
         last_exc: Optional[Exception] = None
+        call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
             try:
@@ -243,27 +244,39 @@ class _SyncExecutor:
                 duration = (time.monotonic() - call_start) if track_duration else 0.0
 
                 # Check retry_on_result predicate
-                if (
-                    retry_on_result is not None
-                    and attempt < max_attempts
-                    and retry_on_result(result)
-                ):
-                    delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                if retry_on_result is not None and retry_on_result(result):
+                    if attempt < max_attempts:
+                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY,
+                                func_name,
+                                attempt=attempt,
+                                detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            )
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    # Last attempt: predicate matched but no retries left
                     if has_listeners:
                         _emit(
                             listeners,
-                            EventType.RETRY,
+                            EventType.RETRY_EXHAUSTED,
                             func_name,
                             attempt=attempt,
-                            detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            detail="result predicate matched on final attempt",
                         )
-                    if delay > 0:
-                        time.sleep(delay)
-                    continue
+                    return result
 
                 if circuit_breaker is not None:
+                    prev_state = circuit_breaker.state
                     new_state = circuit_breaker.record_success(duration)
-                    if new_state == CircuitState.CLOSED and has_listeners:
+                    if (
+                        new_state == CircuitState.CLOSED
+                        and prev_state != CircuitState.CLOSED
+                        and has_listeners
+                    ):
                         _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
                     if track_duration and duration >= slow_call_duration and has_listeners:
                         _emit(
@@ -509,6 +522,7 @@ class _AsyncExecutor:
         slow_call_duration = self._slow_call_duration
         track_duration = circuit_breaker is not None and slow_call_duration > 0
         last_exc: Optional[Exception] = None
+        call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
             try:
@@ -537,27 +551,39 @@ class _AsyncExecutor:
                 duration = (time.monotonic() - call_start) if track_duration else 0.0
 
                 # Check retry_on_result predicate
-                if (
-                    retry_on_result is not None
-                    and attempt < max_attempts
-                    and retry_on_result(result)
-                ):
-                    delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                if retry_on_result is not None and retry_on_result(result):
+                    if attempt < max_attempts:
+                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY,
+                                func_name,
+                                attempt=attempt,
+                                detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            )
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        continue
+                    # Last attempt: predicate matched but no retries left
                     if has_listeners:
                         _emit(
                             listeners,
-                            EventType.RETRY,
+                            EventType.RETRY_EXHAUSTED,
                             func_name,
                             attempt=attempt,
-                            detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            detail="result predicate matched on final attempt",
                         )
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                    continue
+                    return result
 
                 if circuit_breaker is not None:
+                    prev_state = circuit_breaker.state
                     new_state = circuit_breaker.record_success(duration)
-                    if new_state == CircuitState.CLOSED and has_listeners:
+                    if (
+                        new_state == CircuitState.CLOSED
+                        and prev_state != CircuitState.CLOSED
+                        and has_listeners
+                    ):
                         _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
                     if track_duration and duration >= slow_call_duration and has_listeners:
                         _emit(

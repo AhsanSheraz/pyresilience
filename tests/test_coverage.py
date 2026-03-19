@@ -214,8 +214,9 @@ class TestSyncRetryOnResultRetries:
         event_types = [e.event_type for e in events]
         assert EventType.RETRY in event_types
 
-    def test_retry_on_result_returns_last_result_when_exhausted(self) -> None:
-        """On last attempt, result is returned even if predicate matches."""
+    def test_retry_on_result_exhausted_emits_event(self) -> None:
+        """On last attempt, if predicate matches, RETRY_EXHAUSTED is emitted."""
+        events: list[ResilienceEvent] = []
 
         @resilient(
             retry=RetryConfig(
@@ -223,12 +224,15 @@ class TestSyncRetryOnResultRetries:
                 delay=0.001,
                 retry_on_result=lambda r: r == "bad",
             ),
+            listeners=[events.append],
         )
         def always_bad() -> str:
             return "bad"
 
         result = always_bad()
         assert result == "bad"
+        event_types = [e.event_type for e in events]
+        assert EventType.RETRY_EXHAUSTED in event_types
 
 
 class TestAsyncExecutorEdgeCases:
