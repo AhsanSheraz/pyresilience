@@ -87,15 +87,15 @@ class ResultCache:
             self._hits += 1
             return value
 
-    def put(self, key: Any, value: Any) -> None:
-        """Store a value in the cache."""
+    def put(self, key: Any, value: Any) -> list[Any]:
+        """Store a value in the cache. Returns list of evicted keys (if any)."""
         with self._lock:
             if key in self._store:
                 self._store.move_to_end(key)
             self._store[key] = (value, _monotonic())
 
             # Evict oldest entries if over capacity
-            evicted_keys = []
+            evicted_keys: list[Any] = []
             while len(self._store) > self._max_size:
                 evicted_key, _ = self._store.popitem(last=False)
                 evicted_keys.append(evicted_key)
@@ -105,6 +105,8 @@ class ResultCache:
                 with self._key_locks_lock:
                     for evicted_key in evicted_keys:
                         self._key_locks.pop(evicted_key, None)
+
+            return evicted_keys
 
     def invalidate(self, key: Any) -> bool:
         """Remove a specific key. Returns True if it existed."""
@@ -175,12 +177,7 @@ class AsyncResultCache:
         return result
 
     def put(self, key: Any, value: Any) -> None:
-        # Capture keys before put to detect evictions
-        old_keys = set(self._cache._store.keys())
-        self._cache.put(key, value)
-        # Clean up async locks for evicted keys
-        new_keys = set(self._cache._store.keys())
-        evicted_keys = old_keys - new_keys
+        evicted_keys = self._cache.put(key, value)
         if evicted_keys:
             with self._async_key_locks_lock:
                 for evicted_key in evicted_keys:

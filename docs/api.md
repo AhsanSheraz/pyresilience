@@ -232,6 +232,7 @@ In-memory metrics collector.
 | `error` | `BaseException?` | The exception, if any |
 | `detail` | `str` | Additional detail |
 | `context` | `Optional[dict]` | Request-scoped metadata from `resilience_context` |
+| `duration` | `Optional[float]` | Call duration in seconds (set on SUCCESS events) |
 
 ### `EventType`
 

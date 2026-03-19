@@ -201,3 +201,42 @@ class TestPrometheusListenerWithMock:
             assert counter._label_wrappers[retry_key].value == 1.0
         finally:
             self._uninstall_mock_prometheus()
+
+    def test_histogram_observes_duration_on_success(self) -> None:
+        _fake_counter, fake_histogram = self._install_mock_prometheus()
+        try:
+            from pyresilience.contrib.prometheus import PrometheusListener
+
+            listener = PrometheusListener()
+            event = ResilienceEvent(
+                event_type=EventType.SUCCESS,
+                function_name="api_call",
+                attempt=1,
+                duration=0.123,
+            )
+            listener(event)
+
+            histogram = fake_histogram.instances[0]
+            key = tuple(sorted({"function_name": "api_call"}.items()))
+            wrapper = histogram._label_wrappers[key]
+            assert wrapper.value == 0.123
+        finally:
+            self._uninstall_mock_prometheus()
+
+    def test_histogram_not_observed_without_duration(self) -> None:
+        _fake_counter, fake_histogram = self._install_mock_prometheus()
+        try:
+            from pyresilience.contrib.prometheus import PrometheusListener
+
+            listener = PrometheusListener()
+            event = ResilienceEvent(
+                event_type=EventType.RETRY,
+                function_name="api_call",
+                attempt=2,
+            )
+            listener(event)
+
+            histogram = fake_histogram.instances[0]
+            assert len(histogram._label_wrappers) == 0
+        finally:
+            self._uninstall_mock_prometheus()

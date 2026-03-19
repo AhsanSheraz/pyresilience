@@ -409,3 +409,44 @@ class TestCacheKeyUnhashable:
 
         key = _make_cache_key(1, name="test")
         assert isinstance(key, str)
+
+
+class TestResultCachePutReturnsEvictedKeys:
+    def test_put_returns_empty_list_when_no_eviction(self) -> None:
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = ResultCache(config)
+        evicted = cache.put("k1", "v1")
+        assert evicted == []
+
+    def test_put_returns_evicted_keys(self) -> None:
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        evicted = cache.put("k3", "v3")
+        assert evicted == ["k1"]
+
+    def test_put_overwrite_returns_no_eviction(self) -> None:
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        evicted = cache.put("k1", "v1_updated")
+        assert evicted == []
+
+
+class TestAsyncCachePutRaceFree:
+    @pytest.mark.asyncio
+    async def test_async_put_eviction_cleans_locks_without_race(self) -> None:
+        """AsyncResultCache.put() uses returned evicted keys, not unsafe _store read."""
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = AsyncResultCache(config)
+        cache.get_async_key_lock("k1")
+        assert "k1" in cache._async_key_locks
+
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.put("k3", "v3")  # Evicts k1
+
+        assert "k1" not in cache._async_key_locks
+        assert cache.get("k3") == "v3"

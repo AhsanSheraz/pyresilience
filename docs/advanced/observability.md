@@ -17,6 +17,7 @@ class ResilienceEvent:
     error: BaseException = None  # The exception, if any
     detail: str = ""             # Additional context
     context: Optional[dict] = None  # Request-scoped metadata (from resilience_context)
+    duration: Optional[float] = None  # Call duration in seconds (set on SUCCESS events)
 ```
 
 ### Event Types
@@ -232,7 +233,7 @@ def payment_service():
 
 ```python
 from pyresilience import resilient, RetryConfig
-from pyresilience.logging import OpenTelemetryListener
+from pyresilience.contrib.otel import OpenTelemetryListener
 
 otel = OpenTelemetryListener()
 
@@ -248,11 +249,11 @@ Each event creates a span with attributes like `resilience.event_type`, `resilie
 
 ## Prometheus
 
-`PrometheusListener` exports counters, histograms, and gauges to Prometheus via the official client library.
+`PrometheusListener` exports counters and histograms to Prometheus via the official client library.
 
 ```python
 from pyresilience import resilient, RetryConfig
-from pyresilience.logging import PrometheusListener
+from pyresilience.contrib.prometheus import PrometheusListener
 
 prom = PrometheusListener(namespace="myapp")
 
@@ -263,11 +264,12 @@ def call_api():
 
 Exported metrics:
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `myapp_resilience_events_total` | Counter | Total events by type and function |
-| `myapp_resilience_latency_seconds` | Histogram | Call latency by function |
-| `myapp_resilience_circuit_state` | Gauge | Circuit breaker state (0=closed, 1=open, 2=half-open) |
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `myapp_events_total` | Counter | `event_type`, `function_name` | Total events by type and function |
+| `myapp_call_duration_seconds` | Histogram | `function_name` | Call duration on SUCCESS events |
+
+The histogram is only observed when `event.duration` is set (i.e., on SUCCESS events), so it accurately tracks successful call latencies without polluting data with non-call events like retries or circuit opens.
 
 !!! note
     Requires the `prometheus-client` package. Install with `pip install prometheus-client`.

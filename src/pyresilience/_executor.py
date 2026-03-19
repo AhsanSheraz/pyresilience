@@ -175,6 +175,7 @@ def _emit(
     attempt: int = 0,
     error: Optional[BaseException] = None,
     detail: str = "",
+    duration: Optional[float] = None,
 ) -> None:
     """Emit an event to all listeners. No-op when listeners list is empty."""
     ctx = resilience_context.get()
@@ -185,6 +186,7 @@ def _emit(
         error=error,
         detail=detail,
         context=ctx if ctx else None,
+        duration=duration,
     )
     for listener in listeners:
         try:
@@ -437,6 +439,8 @@ class _SyncExecutor:
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         try:
+            if has_listeners:
+                _start = time.monotonic()
             result = func(*args, **kwargs)
             if circuit_breaker is not None:
                 prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
@@ -447,7 +451,13 @@ class _SyncExecutor:
                 ):
                     _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
             if has_listeners:
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+                _emit(
+                    listeners,
+                    EventType.SUCCESS,
+                    func_name,
+                    attempt=1,
+                    duration=time.monotonic() - _start,
+                )
             return result
         except Exception as exc:
             if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
@@ -586,7 +596,13 @@ class _SyncExecutor:
                         )
 
                 if has_listeners:
-                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                    _emit(
+                        listeners,
+                        EventType.SUCCESS,
+                        func_name,
+                        attempt=attempt,
+                        duration=duration,
+                    )
                 return result
 
             except Exception as exc:
@@ -914,6 +930,8 @@ class _AsyncExecutor:
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         try:
+            if has_listeners:
+                _start = time.monotonic()
             result = await func(*args, **kwargs)
             if circuit_breaker is not None:
                 prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
@@ -924,7 +942,13 @@ class _AsyncExecutor:
                 ):
                     _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
             if has_listeners:
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+                _emit(
+                    listeners,
+                    EventType.SUCCESS,
+                    func_name,
+                    attempt=1,
+                    duration=time.monotonic() - _start,
+                )
             return result
         except Exception as exc:
             if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
@@ -1073,7 +1097,13 @@ class _AsyncExecutor:
                         )
 
                 if has_listeners:
-                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                    _emit(
+                        listeners,
+                        EventType.SUCCESS,
+                        func_name,
+                        attempt=attempt,
+                        duration=duration,
+                    )
                 return result
 
             except Exception as exc:

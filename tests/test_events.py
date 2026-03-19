@@ -85,3 +85,40 @@ class TestEventSystem:
         # ResilienceEvent is frozen dataclass
         with __import__("pytest").raises(AttributeError):
             event.event_type = EventType.FAILURE  # type: ignore[misc]
+
+    def test_success_event_has_duration(self) -> None:
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=1, delay=0.01),
+            listeners=[events.append],
+        )
+        def works() -> str:
+            return "ok"
+
+        works()
+        success = [e for e in events if e.event_type == EventType.SUCCESS]
+        assert len(success) == 1
+        assert success[0].duration is not None
+        assert success[0].duration >= 0.0
+
+    def test_success_event_duration_with_retry(self) -> None:
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=2, delay=0.01),
+            listeners=[events.append],
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("fail")
+            return "ok"
+
+        fails_once()
+        success = [e for e in events if e.event_type == EventType.SUCCESS]
+        assert len(success) == 1
+        assert success[0].duration is not None
+        assert success[0].duration >= 0.0

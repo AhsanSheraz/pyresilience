@@ -79,3 +79,8 @@ class PrometheusListener:
             event_type=event.event_type.value,
             function_name=event.function_name,
         ).inc()
+
+        if event.duration is not None:
+            self._duration_histogram.labels(
+                function_name=event.function_name,
+            ).observe(event.duration)

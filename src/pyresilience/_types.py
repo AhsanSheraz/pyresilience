@@ -44,6 +44,7 @@ class ResilienceEvent:
     error: Optional[BaseException] = None
     detail: str = ""
     context: Optional[dict[str, Any]] = None
+    duration: Optional[float] = None
 
 
 # Callback type for event listeners
