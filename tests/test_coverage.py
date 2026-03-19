@@ -762,6 +762,5 @@ class TestMainModule:
             [sys.executable, "-m", "pyresilience"],
             capture_output=True,
             text=True,
-            cwd="/Users/ahsan.sheraz/Documents/bonial/open-source/pyresilience",
         )
         assert "pyresilience" in result.stdout
