@@ -71,6 +71,8 @@ install_uvloop()  # Sets uvloop as the default event loop policy
 !!! note
     uvloop is only available on **Linux and macOS** (not Windows). pyresilience gracefully handles this — `install_uvloop()` returns `False` on unsupported platforms.
 
+    Listener exceptions are logged as warnings (via `logging.warning()`) to prevent broken observability from being silently swallowed, while still protecting the application from listener failures.
+
 ### orjson
 
 [orjson](https://github.com/ijl/orjson) is a Rust-based JSON library that's ~10x faster than stdlib `json`. It's automatically used by `JsonEventLogger` when available.
@@ -96,12 +98,12 @@ print(f"orjson: {has_orjson()}")  # True/False
 
 All pyresilience components are thread-safe:
 
-- **CircuitBreaker**: Lock-free reads for CLOSED state, `threading.Lock` for state transitions
+- **CircuitBreaker**: Uses `threading.Lock` for all state transitions — safe for free-threaded Python 3.13+
 - **Bulkhead**: Atomic counter with `threading.Lock` (non-waiting), `threading.Semaphore` (waiting)
 - **RateLimiter**: Uses `threading.Lock`
 - **ResultCache**: Uses `threading.Lock`
 - **Registry**: Uses `threading.Lock`
-- **MetricsCollector**: Uses `threading.Lock`
+- **MetricsCollector**: Uses `threading.Lock` + `contextvars` for async-safe latency tracking. Latencies bounded to 10,000 entries.
 
 You can safely share these across threads without external synchronization.
 

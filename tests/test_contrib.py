@@ -350,3 +350,33 @@ class TestFastapiMiddleware503:
 
         with pytest.raises(RuntimeError, match="something else"):
             await middleware({"type": "http"}, None, None)
+
+
+class TestDjangoLoadConfigMaxAttempts:
+    def test_load_config_with_max_attempts(self) -> None:
+        """Test Django config with max_attempts (non-deprecated path)."""
+        from unittest import mock
+
+        from pyresilience.contrib.django import ResilientMiddleware
+
+        mock_settings = mock.MagicMock()
+        mock_settings.PYRESILIENCE_CONFIG = {
+            "max_attempts": 4,
+            "retry_delay": 0.2,
+        }
+
+        with (
+            mock.patch("pyresilience.contrib.django.settings", mock_settings, create=True),
+            mock.patch.dict(
+                "sys.modules",
+                {"django": mock.MagicMock(), "django.conf": mock.MagicMock()},
+            ),
+        ):
+            import sys
+
+            sys.modules["django.conf"].settings = mock_settings
+            config = ResilientMiddleware._load_config()
+
+        assert config.retry is not None
+        assert config.retry.max_attempts == 4
+        assert config.retry.delay == 0.2

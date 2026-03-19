@@ -17,7 +17,7 @@ CLOSED ──(failures >= threshold)──> OPEN
 | State | Behavior |
 |-------|----------|
 | **CLOSED** | Normal operation. Calls pass through. Failures are counted. |
-| **OPEN** | All calls are immediately rejected with `RuntimeError`. No calls reach the protected function. |
+| **OPEN** | All calls are immediately rejected with `CircuitOpenError`. No calls reach the protected function. |
 | **HALF_OPEN** | A limited number of calls are allowed through to test if the service has recovered. |
 
 ### State Transitions

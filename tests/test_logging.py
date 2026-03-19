@@ -234,3 +234,48 @@ class TestLoggingLatencyTracking:
         retry_then_succeed()
         latencies = metrics.get_latencies()
         assert len(latencies) > 0
+
+
+class TestMetricsCollectorCallIdDefault:
+    def test_metrics_without_executor_skips_latency(self) -> None:
+        """Calling MetricsCollector directly (call_id=-1) skips latency tracking."""
+        metrics = MetricsCollector()
+        event = ResilienceEvent(
+            event_type=EventType.SUCCESS,
+            function_name="manual_func",
+            attempt=1,
+        )
+        metrics(event)
+        counts = metrics.get_counts("manual_func")
+        assert counts["manual_func"]["success"] == 1
+        # No latency should be tracked since call_id was never set
+        latencies = metrics.get_latencies("manual_func")
+        assert len(latencies.get("manual_func", [])) == 0
+
+
+class TestJsonEventLoggerNoAttempt:
+    def test_event_without_attempt(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Event with attempt=0 omits attempt from JSON."""
+        logger = JsonEventLogger()
+
+        with caplog.at_level(logging.INFO, logger="pyresilience"):
+            event = ResilienceEvent(
+                event_type=EventType.CIRCUIT_OPEN,
+                function_name="test_func",
+                attempt=0,
+            )
+            logger(event)
+
+        data = json.loads(caplog.records[0].message)
+        assert "attempt" not in data
+
+
+class TestOrjsonDumps:
+    def test_make_dumps_produces_valid_json(self) -> None:
+        """Verify _make_dumps (orjson or stdlib) produces valid JSON."""
+        from pyresilience._logging import _dumps
+
+        result = _dumps({"key": "value", "num": 42})
+        parsed = json.loads(result)
+        assert parsed["key"] == "value"
+        assert parsed["num"] == 42

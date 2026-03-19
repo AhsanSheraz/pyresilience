@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.0 (2026-03-19)
+
+### Bug Fixes
+- **Circuit breaker race condition**: Removed lock-free fast path in `allow_request()` — always acquires lock. Safe for free-threaded Python 3.13+ (`--disable-gil`)
+- **Circuit breaker re-checked between retries**: CB state is verified before each retry attempt. If the CB opened (from other threads), retries stop immediately with `CircuitOpenError`
+- **MetricsCollector async collision**: Replaced `threading.get_ident()` with `contextvars.ContextVar` — concurrent async coroutines no longer corrupt latency tracking
+- **Jitter zero-delay floor**: Jitter now has a 10% minimum floor (`max(base * 0.1, random() * delay)`), preventing zero-delay retry storms
+- **Timeout exception chaining**: `ResilienceTimeoutError` now chains via `from exc` instead of `from None`, preserving original traceback for debugging
+- **`strict_policy` docstring**: Corrected from "1 retry (2 total attempts)" to "No retries (1 total attempt)"
+- **Django `max_retries` → `max_attempts`**: Config key renamed for consistency with `RetryConfig`. Old key still works with `DeprecationWarning`
+
+### Improvements
+- **Bulkhead released during retry sleep**: Bulkhead slot is now released during retry backoff and reacquired before the next attempt, preventing slot starvation
+- **Cooperative timeout cancel**: Sync timeout uses `threading.Event` for cancel signaling instead of no-op `future.cancel()`
+- **Listener errors logged**: Broken listeners now emit `logging.warning()` instead of being silently swallowed
+- **Bounded MetricsCollector memory**: Latency history bounded to 10,000 entries via `collections.deque(maxlen=10000)`
+- **Larger default thread pool**: Sync timeout pool increased from 4 to `min(32, cpu_count + 4)` workers
+- **Decorator introspection**: Wrapped functions now expose `_executor` attribute for runtime access to circuit breaker, cache, etc.
+- **Config validation**: `FallbackConfig` and `CacheConfig` now validate inputs in `__post_init__`
+- **`BulkheadFullError` import cleanup**: Now imported directly from `_exceptions` module
+
+### Tests
+- 276 tests (up from 232), 98% branch coverage
+- Removed `test_coverage.py` — all tests distributed to relevant feature test files
+- Added config validation tests for all dataclasses
+
+---
+
 ## v0.2.0 (2026-03-19)
 
 ### New Features

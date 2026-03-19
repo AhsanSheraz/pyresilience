@@ -68,7 +68,7 @@ def critical_function():
 ```
 
 !!! note
-    Listener exceptions are silently suppressed to prevent observability code from breaking the application.
+    Listener exceptions are logged as warnings (via `logging.warning()`) to prevent broken observability from being silently swallowed, while still protecting the application from listener failures.
 
 ## JsonEventLogger
 

@@ -41,7 +41,7 @@ config = RetryConfig(
 | `delay` | `float` | `1.0` | Initial delay between retries in seconds |
 | `backoff_factor` | `float` | `2.0` | Multiplier applied to delay after each retry |
 | `max_delay` | `float` | `60.0` | Maximum delay between retries in seconds |
-| `jitter` | `bool` | `True` | Add random jitter to delay (full jitter: 0 to 1.0x of calculated delay) |
+| `jitter` | `bool` | `True` | Add random jitter to delay (10% floor to 1.0x of calculated delay — never produces zero-delay) |
 | `retry_on` | `Sequence[Type]` | `(Exception,)` | Exception types that trigger a retry |
 | `retry_on_result` | `Callable[[Any], bool]` | `None` | Predicate to retry based on return value |
 

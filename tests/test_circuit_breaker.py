@@ -168,6 +168,24 @@ class TestCircuitBreakerThreadSafety:
         state = cb.record_success()
         assert state == CircuitState.CLOSED
 
+    def test_record_success_atomic_with_sliding_window(self) -> None:
+        """Verify record_success_atomic clears window on HALF_OPEN→CLOSED."""
+        cb = CircuitBreaker(
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                recovery_timeout=0.01,
+                success_threshold=1,
+                sliding_window_size=10,
+                minimum_calls=1,
+            )
+        )
+        # Need enough failures to trigger the sliding window threshold
+        cb.record_failure()  # Should open via sliding window (1 failure / 1 call = 100%)
+        time.sleep(0.05)
+        prev, new = cb.record_success_atomic()
+        assert prev == CircuitState.HALF_OPEN
+        assert new == CircuitState.CLOSED
+
 
 class TestCircuitBreakerConfigValidation:
     def test_failure_threshold_must_be_positive(self) -> None:

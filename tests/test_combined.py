@@ -517,3 +517,144 @@ class TestPoolShutdown:
         assert len(_custom_pools) > 0
         _shutdown_pools()
         assert len(_custom_pools) == 0
+
+
+class TestCBRecheckWithFallback:
+    def test_sync_cb_recheck_triggers_fallback(self) -> None:
+        """CB opens during retry, fallback catches CircuitOpenError."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=5, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, recovery_timeout=60),
+            fallback=FallbackConfig(handler="cb_fallback"),
+            listeners=[events.append],
+        )
+        def always_fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        result = always_fails()
+        assert result == "cb_fallback"
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_OPEN in event_types
+        assert EventType.FALLBACK_USED in event_types
+
+    @pytest.mark.asyncio
+    async def test_async_cb_recheck_triggers_fallback(self) -> None:
+        """Async: CB opens during retry, fallback catches CircuitOpenError."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=5, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, recovery_timeout=60),
+            fallback=FallbackConfig(handler="async_cb_fallback"),
+            listeners=[events.append],
+        )
+        async def always_fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        result = await always_fails()
+        assert result == "async_cb_fallback"
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_OPEN in event_types
+        assert EventType.FALLBACK_USED in event_types
+
+
+class TestRetryOnResultWithBulkhead:
+    def test_sync_retry_on_result_releases_bulkhead(self) -> None:
+        """retry_on_result with bulkhead releases slot during sleep."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.01,
+                jitter=False,
+                retry_on_result=lambda r: r == "bad",
+            ),
+            bulkhead=BulkheadConfig(max_concurrent=1),
+        )
+        def eventually_good() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return "bad"
+            return "good"
+
+        result = eventually_good()
+        assert result == "good"
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_async_retry_on_result_releases_bulkhead(self) -> None:
+        """Async: retry_on_result with bulkhead releases slot during sleep."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.01,
+                jitter=False,
+                retry_on_result=lambda r: r == "bad",
+            ),
+            bulkhead=BulkheadConfig(max_concurrent=1),
+        )
+        async def eventually_good() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                return "bad"
+            return "good"
+
+        result = await eventually_good()
+        assert result == "good"
+        assert call_count == 3
+
+
+class TestAsyncRetryBulkheadRelease:
+    @pytest.mark.asyncio
+    async def test_async_bulkhead_released_during_retry_sleep(self) -> None:
+        """Async: bulkhead slot released during retry backoff on exception."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.05, jitter=False),
+            bulkhead=BulkheadConfig(max_concurrent=1),
+        )
+        async def fails_then_works() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_then_works()
+        assert result == "ok"
+        assert call_count == 3
+
+
+class TestAsyncFallbackOnFailure:
+    @pytest.mark.asyncio
+    async def test_async_fallback_after_retry_exhausted(self) -> None:
+        """Async: fallback used after retries exhausted."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=2, delay=0.001),
+            fallback=FallbackConfig(handler="async_fb"),
+            listeners=[events.append],
+        )
+        async def always_fails() -> str:
+            raise ValueError("fail")
+
+        result = await always_fails()
+        assert result == "async_fb"
+        event_types = [e.event_type for e in events]
+        assert EventType.RETRY_EXHAUSTED in event_types
+        assert EventType.FALLBACK_USED in event_types

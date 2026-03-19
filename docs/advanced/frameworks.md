@@ -88,7 +88,7 @@ PYRESILIENCE_CONFIG = {
     'timeout_seconds': 30,
     'circuit_failure_threshold': 10,
     'circuit_recovery_seconds': 60,
-    'max_retries': 3,
+    'max_attempts': 3,
     'retry_delay': 1.0,
 }
 ```
