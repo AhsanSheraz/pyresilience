@@ -17,5 +17,7 @@ def test_main_output(capsys: object) -> None:
         sys.stdout = sys.__stdout__
 
     output = captured.getvalue()
+    import pyresilience
+
     assert "pyresilience" in output
-    assert "v0.2.0" in output
+    assert f"v{pyresilience.__version__}" in output
