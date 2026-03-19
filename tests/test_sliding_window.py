@@ -8,6 +8,7 @@ import pytest
 
 from pyresilience import (
     CircuitBreakerConfig,
+    CircuitOpenError,
     CircuitState,
     EventType,
     ResilienceEvent,
@@ -237,7 +238,7 @@ class TestSlidingWindowDecorator:
             maybe_fail(True)
 
         # Now circuit should be open
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             maybe_fail(False)
         assert call_count == 4
 
@@ -267,7 +268,7 @@ class TestSlidingWindowDecorator:
         with pytest.raises(ValueError):
             await maybe_fail(True)
 
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             await maybe_fail(False)
         assert call_count == 4
 

@@ -25,7 +25,7 @@ class TestHttpPolicy:
         assert policy["retry"].max_attempts == 3
 
     def test_http_policy_custom(self) -> None:
-        policy = http_policy(timeout_seconds=5.0, max_retries=5, max_concurrent=20)
+        policy = http_policy(timeout_seconds=5.0, max_attempts=5, max_concurrent=20)
         assert policy["timeout"].seconds == 5.0
         assert policy["retry"].max_attempts == 5
         assert "bulkhead" in policy
@@ -49,7 +49,7 @@ class TestHttpPolicy:
     def test_http_policy_applied(self) -> None:
         call_count = 0
 
-        @resilient(**http_policy(timeout_seconds=5, max_retries=2, retry_delay=0.01))
+        @resilient(**http_policy(timeout_seconds=5, max_attempts=2, retry_delay=0.01))
         def api_call() -> str:
             nonlocal call_count
             call_count += 1
@@ -75,7 +75,7 @@ class TestDbPolicy:
         assert policy["timeout"].seconds == 60.0
 
     def test_db_policy_applied(self) -> None:
-        @resilient(**db_policy(timeout_seconds=5, max_retries=1, retry_delay=0.01))
+        @resilient(**db_policy(timeout_seconds=5, max_attempts=1, retry_delay=0.01))
         def query() -> str:
             return "result"
 
@@ -96,7 +96,7 @@ class TestQueuePolicy:
         assert policy["bulkhead"].max_concurrent == 50
 
     def test_queue_policy_applied(self) -> None:
-        @resilient(**queue_policy(timeout_seconds=5, max_retries=2, retry_delay=0.01))
+        @resilient(**queue_policy(timeout_seconds=5, max_attempts=2, retry_delay=0.01))
         def publish() -> str:
             return "sent"
 
@@ -159,7 +159,7 @@ class TestPresetEdgeCases:
 class TestPresetAsync:
     @pytest.mark.asyncio
     async def test_async_http_policy(self) -> None:
-        @resilient(**http_policy(timeout_seconds=5, max_retries=1, retry_delay=0.01))
+        @resilient(**http_policy(timeout_seconds=5, max_attempts=1, retry_delay=0.01))
         async def async_api_call() -> str:
             return "async ok"
 
@@ -167,7 +167,7 @@ class TestPresetAsync:
 
     @pytest.mark.asyncio
     async def test_async_db_policy(self) -> None:
-        @resilient(**db_policy(timeout_seconds=5, max_retries=1, retry_delay=0.01))
+        @resilient(**db_policy(timeout_seconds=5, max_attempts=1, retry_delay=0.01))
         async def async_query() -> str:
             return "async result"
 

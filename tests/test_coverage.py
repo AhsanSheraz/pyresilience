@@ -12,6 +12,7 @@ from pyresilience import (
     BulkheadConfig,
     CacheConfig,
     CircuitBreakerConfig,
+    CircuitOpenError,
     EventType,
     FallbackConfig,
     RateLimiterConfig,
@@ -253,7 +254,7 @@ class TestAsyncExecutorEdgeCases:
             with pytest.raises(ValueError):
                 await fails()
 
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             await fails()
         assert call_count == 2
 
@@ -754,6 +755,168 @@ class TestLoggingLatencyTracking:
         latencies = metrics.get_latencies()
         # Should have tracked latency for the successful call
         assert len(latencies) > 0
+
+
+class TestPoolShutdown:
+    def test_shutdown_pools_cleans_up(self) -> None:
+        """Cover _executor.py lines 48-52: _shutdown_pools."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from pyresilience._executor import _custom_pools, _register_custom_pool, _shutdown_pools
+
+        pool = ThreadPoolExecutor(max_workers=1)
+        _register_custom_pool(pool)
+        assert len(_custom_pools) > 0
+        _shutdown_pools()
+        assert len(_custom_pools) == 0
+
+
+class TestCacheKeyUnhashable:
+    def test_unhashable_args_fallback_to_string_key(self) -> None:
+        """Cover _cache.py lines 28-29: unhashable args."""
+        from pyresilience._cache import _make_cache_key
+
+        # Lists are unhashable — should fallback to string key
+        key = _make_cache_key([1, 2, 3])
+        assert isinstance(key, str)
+        assert "list" in key
+
+    def test_kwargs_uses_string_key(self) -> None:
+        """Cover _cache.py make_key with kwargs."""
+        from pyresilience._cache import _make_cache_key
+
+        key = _make_cache_key(1, name="test")
+        assert isinstance(key, str)
+
+
+class TestSyncCircuitBreakerInRetryPath:
+    def test_circuit_opens_during_retry(self) -> None:
+        """Cover _executor.py lines 370-373: CB opens during retry loop."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=5, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, recovery_timeout=60),
+            listeners=[events.append],
+        )
+        def always_fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        with pytest.raises(ValueError):
+            always_fails()
+
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_OPEN in event_types
+
+    def test_circuit_closes_in_retry_path(self) -> None:
+        """Cover _executor.py line 352: CB HALF_OPEN→CLOSED in _execute_with_retry."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        # retry configured so _execute_with_retry is used (not _execute_direct)
+        @resilient(
+            retry=RetryConfig(max_attempts=2, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(
+                failure_threshold=1, recovery_timeout=0.05, success_threshold=1
+            ),
+            listeners=[events.append],
+        )
+        def works() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 1:
+                raise ValueError("fail")
+            return "ok"
+
+        # Call 1: fails on attempt 1 (opens CB), retries, succeeds on attempt 2
+        result = works()
+        assert result == "ok"
+
+        # CB is now OPEN (failure opened it, success in consecutive mode just
+        # resets count but doesn't change state from OPEN to CLOSED).
+        # Wait for recovery → HALF_OPEN
+        time.sleep(0.1)
+        events.clear()
+
+        # Call 2: succeeds on first attempt → HALF_OPEN → CLOSED
+        call_count = 10  # always succeed
+        result2 = works()
+        assert result2 == "ok"
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_CLOSED in event_types
+
+
+class TestAsyncCircuitBreakerInRetryPath:
+    @pytest.mark.asyncio
+    async def test_async_circuit_opens_during_retry(self) -> None:
+        """Cover _executor.py lines 724-727: async CB opens during retry loop."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=5, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, recovery_timeout=60),
+            listeners=[events.append],
+        )
+        async def always_fails() -> str:
+            raise ValueError("fail")
+
+        with pytest.raises(ValueError):
+            await always_fails()
+
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_OPEN in event_types
+
+    @pytest.mark.asyncio
+    async def test_async_circuit_closes_in_retry_path(self) -> None:
+        """Cover _executor.py line 707: async CB HALF_OPEN→CLOSED in retry path."""
+        events: list[ResilienceEvent] = []
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(max_attempts=2, delay=0.001),
+            circuit_breaker=CircuitBreakerConfig(
+                failure_threshold=1, recovery_timeout=0.05, success_threshold=1
+            ),
+            listeners=[events.append],
+        )
+        async def works() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 1:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await works()
+        assert result == "ok"
+
+        await asyncio.sleep(0.1)
+        events.clear()
+        call_count = 10
+
+        result2 = await works()
+        assert result2 == "ok"
+        event_types = [e.event_type for e in events]
+        assert EventType.CIRCUIT_CLOSED in event_types
+
+    @pytest.mark.asyncio
+    async def test_async_retry_on_result_exhausted_emits_event(self) -> None:
+        """Cover _executor.py line 690: async retry_on_result RETRY_EXHAUSTED."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=2, delay=0.001, retry_on_result=lambda r: r == "bad"),
+            listeners=[events.append],
+        )
+        async def always_bad() -> str:
+            return "bad"
+
+        result = await always_bad()
+        assert result == "bad"
+        event_types = [e.event_type for e in events]
+        assert EventType.RETRY_EXHAUSTED in event_types
 
 
 class TestMainModule:

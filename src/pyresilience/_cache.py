@@ -14,6 +14,24 @@ _SENTINEL = object()
 _monotonic = time.monotonic
 
 
+def _make_cache_key(*args: Any, **kwargs: Any) -> Any:
+    """Create a cache key from function arguments.
+
+    Fast path: when all args are hashable and no kwargs, use the args tuple
+    directly (tuple hashing is much faster than string building + repr).
+    Falls back to type-qualified string key for unhashable args or kwargs.
+    """
+    if not kwargs:
+        try:
+            hash(args)
+            return args
+        except TypeError:
+            pass
+    parts = [f"{type(a).__qualname__}:{a!r}" for a in args]
+    parts.extend(f"{k}={type(v).__qualname__}:{v!r}" for k, v in sorted(kwargs.items()))
+    return "|".join(parts)
+
+
 class ResultCache:
     """Thread-safe LRU result cache with TTL support.
 
@@ -26,18 +44,16 @@ class ResultCache:
         self._max_size = config.max_size
         self._ttl = config.ttl
         self._lock = threading.Lock()
-        self._store: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self._store: OrderedDict[Any, tuple[Any, float]] = OrderedDict()
         self._hits = 0
         self._misses = 0
 
     @staticmethod
-    def make_key(*args: Any, **kwargs: Any) -> str:
+    def make_key(*args: Any, **kwargs: Any) -> Any:
         """Create a cache key from function arguments."""
-        parts = [repr(a) for a in args]
-        parts.extend(f"{k}={v!r}" for k, v in sorted(kwargs.items()))
-        return "|".join(parts)
+        return _make_cache_key(*args, **kwargs)
 
-    def get(self, key: str) -> Any:
+    def get(self, key: Any) -> Any:
         """Get a cached value. Returns _SENTINEL if not found or expired."""
         with self._lock:
             entry = self._store.get(key)
@@ -55,7 +71,7 @@ class ResultCache:
             self._hits += 1
             return value
 
-    def put(self, key: str, value: Any) -> None:
+    def put(self, key: Any, value: Any) -> None:
         """Store a value in the cache."""
         with self._lock:
             if key in self._store:
@@ -66,7 +82,7 @@ class ResultCache:
             while len(self._store) > self._max_size:
                 self._store.popitem(last=False)
 
-    def invalidate(self, key: str) -> bool:
+    def invalidate(self, key: Any) -> bool:
         """Remove a specific key. Returns True if it existed."""
         with self._lock:
             if key in self._store:
@@ -106,16 +122,16 @@ class AsyncResultCache:
         self._cache = ResultCache(config)
 
     @staticmethod
-    def make_key(*args: Any, **kwargs: Any) -> str:
+    def make_key(*args: Any, **kwargs: Any) -> Any:
         return ResultCache.make_key(*args, **kwargs)
 
-    def get(self, key: str) -> Any:
+    def get(self, key: Any) -> Any:
         return self._cache.get(key)
 
-    def put(self, key: str, value: Any) -> None:
+    def put(self, key: Any, value: Any) -> None:
         self._cache.put(key, value)
 
-    def invalidate(self, key: str) -> bool:
+    def invalidate(self, key: Any) -> bool:
         return self._cache.invalidate(key)
 
     def clear(self) -> None:

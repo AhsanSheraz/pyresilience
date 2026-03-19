@@ -89,7 +89,7 @@ class Resilience:
 
     def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute a function with resilience patterns."""
-        return self.executor.execute(func, *args, **kwargs)
+        return self.executor.execute(func, func.__name__, *args, **kwargs)
 
 
 def resilient_route(
@@ -117,7 +117,7 @@ def resilient_route(
     def decorator(view_func: F) -> F:
         @functools.wraps(view_func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return executor.execute(view_func, *args, **kwargs)
+            return executor.execute(view_func, view_func.__name__, *args, **kwargs)
 
         return wrapper  # type: ignore[return-value]
 

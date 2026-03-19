@@ -54,7 +54,8 @@ class RetryConfig:
     """Configuration for retry behavior.
 
     Args:
-        max_attempts: Maximum number of attempts (including the first call).
+        max_attempts: Total number of execution attempts (including the initial call).
+            For example, max_attempts=3 means 1 initial call + 2 retries.
         delay: Initial delay between retries in seconds.
         backoff_factor: Multiplier applied to delay after each retry.
         max_delay: Maximum delay between retries in seconds.
@@ -73,6 +74,14 @@ class RetryConfig:
     retry_on: Sequence[Type[BaseException]] = (Exception,)
     retry_on_result: Optional[Callable[[Any], bool]] = None
 
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
+        if self.delay < 0:
+            raise ValueError("delay must be >= 0")
+        if self.max_delay < 0:
+            raise ValueError("max_delay must be >= 0")
+
 
 @dataclass
 class TimeoutConfig:
@@ -85,6 +94,12 @@ class TimeoutConfig:
 
     seconds: float = 30.0
     pool_size: int = 4
+
+    def __post_init__(self) -> None:
+        if self.seconds <= 0:
+            raise ValueError("seconds must be > 0")
+        if self.pool_size < 1:
+            raise ValueError("pool_size must be >= 1")
 
 
 @dataclass
@@ -123,6 +138,14 @@ class CircuitBreakerConfig:
     slow_call_duration: float = 0.0
     slow_call_rate_threshold: float = 1.0
 
+    def __post_init__(self) -> None:
+        if self.failure_threshold < 1:
+            raise ValueError("failure_threshold must be >= 1")
+        if self.recovery_timeout < 0:
+            raise ValueError("recovery_timeout must be >= 0")
+        if not 0.0 <= self.failure_rate_threshold <= 1.0:
+            raise ValueError("failure_rate_threshold must be between 0.0 and 1.0")
+
 
 @dataclass
 class FallbackConfig:
@@ -150,6 +173,10 @@ class BulkheadConfig:
     max_concurrent: int = 10
     max_wait: float = 0.0
 
+    def __post_init__(self) -> None:
+        if self.max_concurrent < 1:
+            raise ValueError("max_concurrent must be >= 1")
+
 
 @dataclass
 class RateLimiterConfig:
@@ -164,6 +191,12 @@ class RateLimiterConfig:
     max_calls: int = 10
     period: float = 1.0
     max_wait: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.max_calls < 1:
+            raise ValueError("max_calls must be >= 1")
+        if self.period <= 0:
+            raise ValueError("period must be > 0")
 
 
 @dataclass

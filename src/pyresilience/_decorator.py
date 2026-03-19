@@ -87,12 +87,13 @@ def resilient(
     )
 
     def decorator(fn: F) -> F:
+        fn_name = fn.__name__
         if inspect.iscoroutinefunction(fn):
             executor = _AsyncExecutor(config)
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-                return await executor.execute(fn, *args, **kwargs)
+                return await executor.execute(fn, fn_name, *args, **kwargs)
 
             return async_wrapper  # type: ignore[return-value]
         else:
@@ -100,13 +101,12 @@ def resilient(
 
             @functools.wraps(fn)
             def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-                return executor_sync.execute(fn, *args, **kwargs)
+                return executor_sync.execute(fn, fn_name, *args, **kwargs)
 
             return sync_wrapper  # type: ignore[return-value]
 
     if func is not None:
-        # Used as @resilient without arguments — apply default retry
-        config.retry = config.retry or RetryConfig()
+        # Used as @resilient without arguments — pass through with no patterns
         return decorator(func)
 
     return decorator

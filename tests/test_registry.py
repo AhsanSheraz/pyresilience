@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from pyresilience import CircuitOpenError
 from pyresilience._registry import ResilienceRegistry
 from pyresilience._types import (
     CircuitBreakerConfig,
@@ -126,7 +127,7 @@ class TestRegistryDecorator:
             func_a()
 
         # Circuit should now be open for both
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             func_b()
 
     def test_decorator_with_default_config(self) -> None:

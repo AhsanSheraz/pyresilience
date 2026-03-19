@@ -121,16 +121,16 @@ class TestRetryAsync:
 
 
 class TestBareDecorator:
-    def test_bare_decorator_retries(self) -> None:
+    def test_bare_decorator_no_retry(self) -> None:
+        """Bare @resilient is a passthrough — no patterns enabled."""
         call_count = 0
 
         @resilient
-        def fails_twice() -> str:
+        def fails() -> str:
             nonlocal call_count
             call_count += 1
-            if call_count < 3:
-                raise ValueError("retry me")
-            return "ok"
+            raise ValueError("no retry")
 
-        assert fails_twice() == "ok"
-        assert call_count == 3
+        with pytest.raises(ValueError, match="no retry"):
+            fails()
+        assert call_count == 1

@@ -15,19 +15,34 @@
 - Cached module-level locals for `time.monotonic`, `random.random`, enum members
 - Inlined `isinstance()` checks, guarded event emission with `has_listeners` bool
 - Pre-computed rate (tokens/sec) in rate limiter
-- Decorator overhead: 0.56us (13x faster than tenacity at 7.31us)
-- Circuit breaker overhead: 1.25us
-- Memory reduced to 1,052KB per 1,000 decorated functions (53% less than tenacity)
-- Throughput: 231K ops/sec (3.0x tenacity)
+- Lock-free circuit breaker reads for CLOSED state (CPython GIL atomic reference)
+- `atexit` + `weakref` thread pool lifecycle management
+- Tuple-based cache keys (fast path for hashable args)
+- Integer nanosecond arithmetic in rate limiter (avoids float overhead)
+- Fast path: skip retry loop when no retry/timeout/slow-call configured
+- Atomic counter with lock for non-waiting bulkhead mode
+- Decorator overhead: 0.55us (13x faster than tenacity at 7.02us)
+- Circuit breaker overhead: 0.99us (was 1.25us)
+- All 7 patterns combined: 0.66us (was 0.94us)
+- Memory: 1,104KB per 1,000 decorated functions (51% less than tenacity)
+- Throughput: 242K ops/sec (2.8x tenacity)
+
+### Code Quality
+- **Error hierarchy**: `ResilienceError` base class with `CircuitOpenError`, `BulkheadFullError`, `RateLimitExceededError`, `ResilienceTimeoutError` subclasses
+- **Input validation**: `__post_init__` validation on all config dataclasses
+- **Preset naming**: `max_retries` → `max_attempts` for consistency with `RetryConfig`
+- Bare `@resilient` is now a passthrough (no auto-retry)
 
 ### Fixes
 - Replaced deprecated `asyncio.iscoroutinefunction` with `inspect.iscoroutinefunction`
 - `BaseException` → `Exception` in retry loops (no longer catches KeyboardInterrupt/SystemExit)
 - Full jitter (`random.random() * delay`) for better thundering-herd protection
 - Configurable thread pool size for sync timeouts (`TimeoutConfig(pool_size=N)`)
+- Thread pool lifecycle management with `atexit` cleanup (prevents resource leaks)
+- Cache key collisions fixed with type-qualified string keys for unhashable args
 
 ### Tests
-- 224 tests (up from 176), 98.5% branch coverage
+- 232 tests (up from 176), 98.56% branch coverage
 - New: `test_sliding_window.py` (15 tests), `test_retry_on_result.py` (11 tests)
 - Expanded `test_coverage.py` with edge case tests for executor, contrib, presets, and logging modules
 
