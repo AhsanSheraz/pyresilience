@@ -159,3 +159,33 @@ class TestRegistryDecorator:
             return "ok"
 
         assert my_async_func.__name__ == "my_async_func"
+
+
+class TestRegistryExecutorExposure:
+    def test_sync_decorator_exposes_sync_executor(self) -> None:
+        """Sync decorated function has _executor attribute that is a _SyncExecutor."""
+        from pyresilience._executor import _SyncExecutor
+
+        registry = ResilienceRegistry()
+        registry.register("api", ResilienceConfig(retry=RetryConfig(max_attempts=1)))
+
+        @registry.decorator("api")
+        def my_func() -> str:
+            return "ok"
+
+        assert hasattr(my_func, "_executor")
+        assert isinstance(my_func._executor, _SyncExecutor)
+
+    async def test_async_decorator_exposes_async_executor(self) -> None:
+        """Async decorated function has _executor attribute that is an _AsyncExecutor."""
+        from pyresilience._executor import _AsyncExecutor
+
+        registry = ResilienceRegistry()
+        registry.register("api", ResilienceConfig(retry=RetryConfig(max_attempts=1)))
+
+        @registry.decorator("api")
+        async def my_func() -> str:
+            return "ok"
+
+        assert hasattr(my_func, "_executor")
+        assert isinstance(my_func._executor, _AsyncExecutor)

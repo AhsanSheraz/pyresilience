@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+
+import pytest
 
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
 from pyresilience._types import CacheConfig
@@ -283,6 +286,114 @@ class TestCacheStampedePrevention:
         assert lock2 is not lock
 
 
+class TestCacheLockCleanupSync:
+    def test_lru_eviction_cleans_up_key_lock(self) -> None:
+        """After LRU eviction, the lock for the evicted key is removed from _key_locks."""
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = ResultCache(config)
+        # Create a lock for k1 by requesting it
+        cache.get_key_lock("k1")
+        assert "k1" in cache._key_locks
+
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.put("k3", "v3")  # Evicts k1
+
+        assert "k1" not in cache._key_locks
+        assert cache.get("k1") is _SENTINEL
+
+    def test_ttl_expiration_cleans_up_key_lock(self) -> None:
+        """After TTL expiration + get, the lock for the expired key is cleaned up."""
+        config = CacheConfig(max_size=10, ttl=0.05)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.get_key_lock("k1")
+        assert "k1" in cache._key_locks
+
+        time.sleep(0.1)
+        assert cache.get("k1") is _SENTINEL
+        assert "k1" not in cache._key_locks
+
+    def test_invalidate_cleans_up_key_lock(self) -> None:
+        """After invalidate(key), the lock for that key is cleaned up."""
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.get_key_lock("k1")
+        assert "k1" in cache._key_locks
+
+        cache.invalidate("k1")
+        assert "k1" not in cache._key_locks
+
+    def test_clear_cleans_up_all_key_locks(self) -> None:
+        """After clear(), all locks are cleaned up."""
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.get_key_lock("k1")
+        cache.get_key_lock("k2")
+        assert len(cache._key_locks) == 2
+
+        cache.clear()
+        assert len(cache._key_locks) == 0
+
+
+class TestCacheLockCleanupAsync:
+    @pytest.mark.asyncio
+    async def test_async_lru_eviction_cleans_up_async_key_lock(self) -> None:
+        """After LRU eviction in AsyncResultCache, async lock is cleaned up."""
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = AsyncResultCache(config)
+        cache.get_async_key_lock("k1")
+        assert "k1" in cache._async_key_locks
+
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.put("k3", "v3")  # Evicts k1
+
+        assert "k1" not in cache._async_key_locks
+
+    @pytest.mark.asyncio
+    async def test_async_ttl_expiration_cleans_up_async_key_lock(self) -> None:
+        """After TTL expiration in AsyncResultCache, async lock is cleaned up."""
+        config = CacheConfig(max_size=10, ttl=0.05)
+        cache = AsyncResultCache(config)
+        cache.put("k1", "v1")
+        cache.get_async_key_lock("k1")
+        assert "k1" in cache._async_key_locks
+
+        await asyncio.sleep(0.1)
+        assert cache.get("k1") is _SENTINEL
+        assert "k1" not in cache._async_key_locks
+
+    @pytest.mark.asyncio
+    async def test_async_invalidate_cleans_up_async_key_lock(self) -> None:
+        """After invalidate in AsyncResultCache, async lock is cleaned up."""
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = AsyncResultCache(config)
+        cache.put("k1", "v1")
+        cache.get_async_key_lock("k1")
+        assert "k1" in cache._async_key_locks
+
+        cache.invalidate("k1")
+        assert "k1" not in cache._async_key_locks
+
+    @pytest.mark.asyncio
+    async def test_async_clear_cleans_up_all_async_key_locks(self) -> None:
+        """After clear in AsyncResultCache, all async locks are cleaned up."""
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = AsyncResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.get_async_key_lock("k1")
+        cache.get_async_key_lock("k2")
+        assert len(cache._async_key_locks) == 2
+
+        cache.clear()
+        assert len(cache._async_key_locks) == 0
+
+
 class TestCacheKeyUnhashable:
     def test_unhashable_args_fallback_to_string_key(self) -> None:
         """Unhashable args use string-based key."""
@@ -298,3 +409,44 @@ class TestCacheKeyUnhashable:
 
         key = _make_cache_key(1, name="test")
         assert isinstance(key, str)
+
+
+class TestResultCachePutReturnsEvictedKeys:
+    def test_put_returns_empty_list_when_no_eviction(self) -> None:
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = ResultCache(config)
+        evicted = cache.put("k1", "v1")
+        assert evicted == []
+
+    def test_put_returns_evicted_keys(self) -> None:
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        evicted = cache.put("k3", "v3")
+        assert evicted == ["k1"]
+
+    def test_put_overwrite_returns_no_eviction(self) -> None:
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = ResultCache(config)
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        evicted = cache.put("k1", "v1_updated")
+        assert evicted == []
+
+
+class TestAsyncCachePutRaceFree:
+    @pytest.mark.asyncio
+    async def test_async_put_eviction_cleans_locks_without_race(self) -> None:
+        """AsyncResultCache.put() uses returned evicted keys, not unsafe _store read."""
+        config = CacheConfig(max_size=2, ttl=60.0)
+        cache = AsyncResultCache(config)
+        cache.get_async_key_lock("k1")
+        assert "k1" in cache._async_key_locks
+
+        cache.put("k1", "v1")
+        cache.put("k2", "v2")
+        cache.put("k3", "v3")  # Evicts k1
+
+        assert "k1" not in cache._async_key_locks
+        assert cache.get("k3") == "v3"

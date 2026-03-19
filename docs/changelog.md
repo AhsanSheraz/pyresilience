@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.3.1 (2026-03-19)
+
+### New Features
+- **Context propagation**: `resilience_context` ContextVar carries request-scoped metadata (trace ID, user ID, etc.) into every `ResilienceEvent.context` field automatically
+- **Per-attempt timeout**: `TimeoutConfig(per_attempt=False)` enforces a single deadline across all retry attempts instead of resetting per attempt
+- **Retry budget**: `RetryBudgetConfig(max_retries=100, refill_rate=10)` provides a shared token pool that prevents cascading retries across decorated functions
+- **Health check**: `health_check(registry)` returns a dict summarizing circuit breaker states, in-flight calls, and rate limiter availability for all registered functions
+- **OpenTelemetry listener**: `OpenTelemetryListener` emits spans and attributes for each resilience event, integrating with the OpenTelemetry SDK
+- **Prometheus listener**: `PrometheusListener` exports counters and histograms to Prometheus via the official client library
+- **Graceful shutdown**: `shutdown()` drains in-flight calls and releases thread pool resources cleanly
+- **Event duration tracking**: `ResilienceEvent.duration` field populated on SUCCESS events for observability integrations
+- **Production/Stable classifier**: PyPI classifier bumped to `Development Status :: 5 - Production/Stable`
+
+### Bug Fixes
+- **AsyncResultCache.put() race condition**: Fixed unsafe read of `_store.keys()` without holding the lock; `ResultCache.put()` now returns evicted keys directly
+- **Prometheus histogram unused**: `PrometheusListener` now observes call duration via `_duration_histogram` on SUCCESS events
+- **Cache lock memory leak**: Per-key locks in cache stampede prevention are now evicted alongside their cache entries, preventing unbounded lock accumulation
+- **`asyncio.iscoroutinefunction` deprecation**: Replaced remaining usage with `inspect.iscoroutinefunction` for Python 3.14+ compatibility
+- **`install_uvloop` deprecated API**: Switched from `uvloop.install()` to `uvloop.EventLoopPolicy()` to silence deprecation warnings
+- **Registry executor exposure**: `ResilienceRegistry` now exposes executors via `get_executor(name)` for runtime introspection without private attribute access
+
+### Performance
+- Zero overhead from new features when no listeners attached
+- Duration timing gated behind `if has_listeners:` — zero cost on hot path
+- Lazy in-flight tracking: counter and lock only allocated when `enable_in_flight_tracking()` is called
+- Benchmark results (Apple Silicon): 0.64μs decorator overhead, 223,934 ops/sec throughput, 14.4x faster than tenacity async
+
+### Tests
+- 365 tests (up from 289), 96% branch coverage
+- New tests for context propagation, per-attempt timeout, retry budget, health check, OpenTelemetry listener, Prometheus listener, graceful shutdown, event duration, and async cache race fix
+
+---
+
 ## v0.3.0 (2026-03-19)
 
 ### New Features

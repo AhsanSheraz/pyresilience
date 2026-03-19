@@ -111,6 +111,7 @@ class ResilienceRegistry:
                 async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
                     return await executor.execute(func, fn_name, *args, **kwargs)
 
+                async_wrapped._executor = executor  # type: ignore[attr-defined]
                 return async_wrapped  # type: ignore[return-value]
             else:
                 executor = self._get_executor(name, is_async=False)
@@ -120,6 +121,7 @@ class ResilienceRegistry:
                 def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
                     return executor.execute(func, fn_name, *args, **kwargs)
 
+                sync_wrapped._executor = executor  # type: ignore[attr-defined]
                 return sync_wrapped  # type: ignore[return-value]
 
         return wrapper

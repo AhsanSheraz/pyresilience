@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import ctypes
+import inspect
 import logging
 import os
 import random
@@ -31,8 +32,9 @@ from pyresilience._exceptions import (
     CircuitOpenError,
     ResilienceTimeoutError,
 )
-from pyresilience._logging import _call_id_counter, call_id_var
+from pyresilience._logging import _call_id_counter, call_id_var, resilience_context
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
+from pyresilience._retry_budget import RetryBudget
 from pyresilience._types import (
     CircuitState,
     EventType,
@@ -51,6 +53,72 @@ _default_timeout_pool = ThreadPoolExecutor(max_workers=min(32, (os.cpu_count() o
 
 # Track custom pools for cleanup at exit
 _custom_pools: list[weakref.ref[ThreadPoolExecutor]] = []
+
+# In-flight call tracking for graceful shutdown (lazy activation)
+# Tracking is zero-cost until enable_in_flight_tracking() or shutdown() is called.
+_in_flight = threading.Event()
+_in_flight.set()  # Initially "no calls in flight" (set = ready)
+_in_flight_count = 0
+_in_flight_lock = threading.Lock()
+_shutting_down = False
+_tracking_enabled = False
+
+
+def enable_in_flight_tracking() -> None:
+    """Enable in-flight call tracking. Called automatically by shutdown()."""
+    global _tracking_enabled
+    _tracking_enabled = True
+
+
+def _track_call_start() -> None:
+    """Increment in-flight call counter. No-op unless tracking is enabled."""
+    if not _tracking_enabled:
+        return
+    global _in_flight_count
+    with _in_flight_lock:
+        _in_flight_count += 1
+        _in_flight.clear()
+
+
+def _track_call_end() -> None:
+    """Decrement in-flight call counter. No-op unless tracking is enabled."""
+    if not _tracking_enabled:
+        return
+    global _in_flight_count
+    with _in_flight_lock:
+        _in_flight_count -= 1
+        if _in_flight_count <= 0:
+            _in_flight_count = 0
+            _in_flight.set()
+
+
+def get_in_flight_count() -> int:
+    """Return the number of currently in-flight resilient calls."""
+    with _in_flight_lock:
+        return _in_flight_count
+
+
+def shutdown(wait: bool = True, timeout: float = 30.0) -> bool:
+    """Gracefully shut down pyresilience, draining in-flight calls.
+
+    Args:
+        wait: If True, block until all in-flight calls complete or timeout expires.
+        timeout: Maximum seconds to wait for in-flight calls to drain.
+
+    Returns:
+        True if all calls drained within the timeout, False if timed out.
+    """
+    global _shutting_down
+    _shutting_down = True
+    enable_in_flight_tracking()
+
+    drained = True
+    if wait:
+        drained = _in_flight.wait(timeout=timeout)
+
+    # Shut down thread pools
+    _shutdown_pools()
+    return drained
 
 
 def _register_custom_pool(pool: ThreadPoolExecutor) -> None:
@@ -107,14 +175,18 @@ def _emit(
     attempt: int = 0,
     error: Optional[BaseException] = None,
     detail: str = "",
+    duration: Optional[float] = None,
 ) -> None:
     """Emit an event to all listeners. No-op when listeners list is empty."""
+    ctx = resilience_context.get()
     event = ResilienceEvent(
         event_type=event_type,
         function_name=func_name,
         attempt=attempt,
         error=error,
         detail=detail,
+        context=ctx if ctx else None,
+        duration=duration,
     )
     for listener in listeners:
         try:
@@ -153,7 +225,7 @@ async def _apply_fallback_async(fallback_cfg: FallbackConfig, exc: BaseException
     """
     handler = fallback_cfg.handler
     if callable(handler):
-        if asyncio.iscoroutinefunction(handler):
+        if inspect.iscoroutinefunction(handler):
             return await handler(exc)
         return handler(exc)
     return handler
@@ -179,10 +251,12 @@ class _SyncExecutor:
         "_listeners",
         "_max_attempts",
         "_rate_limiter",
+        "_retry_budget",
         "_retry_cfg",
         "_retry_on",
         "_retry_on_result",
         "_slow_call_duration",
+        "_timeout_per_attempt",
         "_timeout_pool",
         "_timeout_seconds",
     )
@@ -206,6 +280,7 @@ class _SyncExecutor:
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
         self._timeout_seconds = config.timeout.seconds if config.timeout else 0.0
+        self._timeout_per_attempt = config.timeout.per_attempt if config.timeout else True
         self._retry_on_result = config.retry.retry_on_result if config.retry else None
         self._slow_call_duration = (
             config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
@@ -232,11 +307,26 @@ class _SyncExecutor:
             RateLimiter(config.rate_limiter) if config.rate_limiter else None
         )
         self._cache: Optional[ResultCache] = ResultCache(config.cache) if config.cache else None
+        self._retry_budget: Optional[RetryBudget] = (
+            RetryBudget(config.retry_budget) if config.retry_budget else None
+        )
 
     def execute(self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any) -> Any:
         # Set unique call ID for MetricsCollector latency tracking
         call_id_var.set(next(_call_id_counter))
+        _tracking = _tracking_enabled
+        if _tracking:
+            _track_call_start()
 
+        try:
+            return self._execute_core(func, func_name, *args, **kwargs)
+        finally:
+            if _tracking:
+                _track_call_end()
+
+    def _execute_core(
+        self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
+    ) -> Any:
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
@@ -349,6 +439,8 @@ class _SyncExecutor:
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         try:
+            if has_listeners:
+                _start = time.monotonic()
             result = func(*args, **kwargs)
             if circuit_breaker is not None:
                 prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
@@ -359,7 +451,13 @@ class _SyncExecutor:
                 ):
                     _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
             if has_listeners:
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+                _emit(
+                    listeners,
+                    EventType.SUCCESS,
+                    func_name,
+                    attempt=1,
+                    duration=time.monotonic() - _start,
+                )
             return result
         except Exception as exc:
             if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
@@ -393,11 +491,16 @@ class _SyncExecutor:
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         has_timeout = self._has_timeout
+        timeout_per_attempt = self._timeout_per_attempt
         retry_on_result = self._retry_on_result
         slow_call_duration = self._slow_call_duration
         track_duration = circuit_breaker is not None and slow_call_duration > 0
         last_exc: Optional[Exception] = None
         call_start: float = 0.0
+        # Total timeout: compute a deadline shared across all attempts
+        deadline: float = 0.0
+        if has_timeout and not timeout_per_attempt:
+            deadline = time.monotonic() + self._timeout_seconds
 
         for attempt in range(1, max_attempts + 1):
             # Re-check circuit breaker before retry attempts
@@ -416,7 +519,27 @@ class _SyncExecutor:
                     call_start = time.monotonic()
 
                 if has_timeout:
-                    result = self._execute_with_timeout(func, func_name, listeners, *args, **kwargs)
+                    if timeout_per_attempt:
+                        result = self._execute_with_timeout(
+                            func, func_name, listeners, self._timeout_seconds, *args, **kwargs
+                        )
+                    else:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            if self._has_listeners:
+                                _emit(
+                                    listeners,
+                                    EventType.TIMEOUT,
+                                    func_name,
+                                    detail=f"exceeded total {self._timeout_seconds}s budget",
+                                )
+                            raise ResilienceTimeoutError(
+                                f"{func_name} exceeded total timeout budget of"
+                                f" {self._timeout_seconds}s"
+                            )
+                        result = self._execute_with_timeout(
+                            func, func_name, listeners, remaining, *args, **kwargs
+                        )
                 else:
                     result = func(*args, **kwargs)
 
@@ -473,7 +596,13 @@ class _SyncExecutor:
                         )
 
                 if has_listeners:
-                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                    _emit(
+                        listeners,
+                        EventType.SUCCESS,
+                        func_name,
+                        attempt=attempt,
+                        duration=duration,
+                    )
                 return result
 
             except Exception as exc:
@@ -488,6 +617,24 @@ class _SyncExecutor:
 
                 # Retry if retryable and attempts remain
                 if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
+                    # Check retry budget before retrying
+                    retry_budget = self._retry_budget
+                    if retry_budget is not None and not retry_budget.acquire():
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY_EXHAUSTED,
+                                func_name,
+                                attempt=attempt,
+                                error=exc,
+                                detail="retry budget exhausted",
+                            )
+                        if fallback_cfg is not None and isinstance(exc, fallback_on):
+                            if has_listeners:
+                                _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                            return _apply_fallback(fallback_cfg, exc)
+                        raise
+
                     delay = _compute_delay(retry_cfg, attempt)
                     if has_listeners:
                         _emit(
@@ -547,10 +694,10 @@ class _SyncExecutor:
         func: Callable[..., Any],
         func_name: str,
         listeners: list[ResilienceListener],
+        timeout_seconds: float,
         *args: Any,
         **kwargs: Any,
     ) -> Any:
-        timeout_seconds = self._timeout_seconds
         thread_id_holder: list[int] = []
 
         def _wrapper() -> Any:
@@ -599,10 +746,12 @@ class _AsyncExecutor:
         "_listeners",
         "_max_attempts",
         "_rate_limiter",
+        "_retry_budget",
         "_retry_cfg",
         "_retry_on",
         "_retry_on_result",
         "_slow_call_duration",
+        "_timeout_per_attempt",
         "_timeout_seconds",
     )
 
@@ -625,6 +774,7 @@ class _AsyncExecutor:
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
         self._timeout_seconds = config.timeout.seconds if config.timeout else 0.0
+        self._timeout_per_attempt = config.timeout.per_attempt if config.timeout else True
         self._retry_on_result = config.retry.retry_on_result if config.retry else None
         self._slow_call_duration = (
             config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
@@ -645,13 +795,28 @@ class _AsyncExecutor:
         self._cache: Optional[AsyncResultCache] = (
             AsyncResultCache(config.cache) if config.cache else None
         )
+        self._retry_budget: Optional[RetryBudget] = (
+            RetryBudget(config.retry_budget) if config.retry_budget else None
+        )
 
     async def execute(
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         # Set unique call ID for MetricsCollector latency tracking
         call_id_var.set(next(_call_id_counter))
+        _tracking = _tracking_enabled
+        if _tracking:
+            _track_call_start()
 
+        try:
+            return await self._execute_core(func, func_name, *args, **kwargs)
+        finally:
+            if _tracking:
+                _track_call_end()
+
+    async def _execute_core(
+        self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
+    ) -> Any:
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
@@ -765,6 +930,8 @@ class _AsyncExecutor:
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         try:
+            if has_listeners:
+                _start = time.monotonic()
             result = await func(*args, **kwargs)
             if circuit_breaker is not None:
                 prev_state, new_state = circuit_breaker.record_success_atomic(0.0)
@@ -775,7 +942,13 @@ class _AsyncExecutor:
                 ):
                     _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
             if has_listeners:
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+                _emit(
+                    listeners,
+                    EventType.SUCCESS,
+                    func_name,
+                    attempt=1,
+                    duration=time.monotonic() - _start,
+                )
             return result
         except Exception as exc:
             if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
@@ -810,11 +983,16 @@ class _AsyncExecutor:
         fallback_cfg = self._fallback_cfg
         has_timeout = self._has_timeout
         timeout_seconds = self._timeout_seconds
+        timeout_per_attempt = self._timeout_per_attempt
         retry_on_result = self._retry_on_result
         slow_call_duration = self._slow_call_duration
         track_duration = circuit_breaker is not None and slow_call_duration > 0
         last_exc: Optional[Exception] = None
         call_start: float = 0.0
+        # Total timeout: compute a deadline shared across all attempts
+        deadline: float = 0.0
+        if has_timeout and not timeout_per_attempt:
+            deadline = time.monotonic() + timeout_seconds
 
         for attempt in range(1, max_attempts + 1):
             # Re-check circuit breaker before retry attempts
@@ -833,9 +1011,24 @@ class _AsyncExecutor:
                     call_start = time.monotonic()
 
                 if has_timeout:
+                    if timeout_per_attempt:
+                        effective_timeout = timeout_seconds
+                    else:
+                        effective_timeout = deadline - time.monotonic()
+                        if effective_timeout <= 0:
+                            if has_listeners:
+                                _emit(
+                                    listeners,
+                                    EventType.TIMEOUT,
+                                    func_name,
+                                    detail=f"exceeded total {timeout_seconds}s budget",
+                                )
+                            raise ResilienceTimeoutError(
+                                f"{func_name} exceeded total timeout budget of {timeout_seconds}s"
+                            )
                     try:
                         result = await asyncio.wait_for(
-                            func(*args, **kwargs), timeout=timeout_seconds
+                            func(*args, **kwargs), timeout=effective_timeout
                         )
                     except asyncio.TimeoutError as exc:
                         if has_listeners:
@@ -904,7 +1097,13 @@ class _AsyncExecutor:
                         )
 
                 if has_listeners:
-                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                    _emit(
+                        listeners,
+                        EventType.SUCCESS,
+                        func_name,
+                        attempt=attempt,
+                        duration=duration,
+                    )
                 return result
 
             except Exception as exc:
@@ -917,6 +1116,24 @@ class _AsyncExecutor:
                         _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
 
                 if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
+                    # Check retry budget before retrying
+                    retry_budget = self._retry_budget
+                    if retry_budget is not None and not retry_budget.acquire():
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY_EXHAUSTED,
+                                func_name,
+                                attempt=attempt,
+                                error=exc,
+                                detail="retry budget exhausted",
+                            )
+                        if fallback_cfg is not None and isinstance(exc, fallback_on):
+                            if has_listeners:
+                                _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                            return await _apply_fallback_async(fallback_cfg, exc)
+                        raise
+
                     delay = _compute_delay(retry_cfg, attempt)
                     if has_listeners:
                         _emit(

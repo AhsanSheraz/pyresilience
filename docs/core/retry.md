@@ -145,6 +145,33 @@ def on_event(event):
         print(f"All retries exhausted for {event.function_name}: {event.error}")
 ```
 
+## Retry Budget
+
+A retry budget limits the total number of retries across all decorated functions, preventing cascading retry storms during widespread outages.
+
+```python
+from pyresilience import resilient, RetryConfig, RetryBudgetConfig, RetryBudget
+
+budget = RetryBudget(RetryBudgetConfig(max_retries=100, refill_rate=10))
+
+@resilient(retry=RetryConfig(max_attempts=3, retry_budget=budget))
+def call_service_a():
+    return requests.get("https://a.example.com").json()
+
+@resilient(retry=RetryConfig(max_attempts=3, retry_budget=budget))
+def call_service_b():
+    return requests.get("https://b.example.com").json()
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_retries` | `int` | `100` | Maximum retry tokens in the budget pool |
+| `refill_rate` | `float` | `10` | Tokens refilled per second |
+
+When the budget is exhausted, retry attempts are skipped and the last exception propagates immediately. The budget refills over time at the configured rate.
+
+This is especially useful in microservice architectures where many functions share the same downstream dependency — if the dependency is down, the budget prevents all functions from retrying simultaneously.
+
 ## Backoff Strategies
 
 ### Exponential Backoff (default)

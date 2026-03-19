@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyresilience"
-version = "0.3.0"
+version = "0.3.1"
 description = "Unified resilience patterns for Python — retry, circuit breaker, timeout, fallback, bulkhead, rate limiter, and cache in one decorator."
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,7 @@ keywords = [
     "reliability", "microservices", "distributed-systems",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
@@ -76,7 +76,7 @@ python_version = "3.9"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["uvloop", "orjson"]
+module = ["uvloop", "orjson", "opentelemetry", "prometheus_client"]
 ignore_missing_imports = true
 
 [tool.ruff]

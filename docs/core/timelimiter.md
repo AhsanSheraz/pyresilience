@@ -29,13 +29,15 @@ Attempt 2: [── 3s ──] SUCCESS!
 from pyresilience import TimeoutConfig
 
 config = TimeoutConfig(
-    seconds=30.0,  # Maximum execution time per call
+    seconds=30.0,       # Maximum execution time
+    per_attempt=True,    # True = per attempt, False = total deadline
 )
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `seconds` | `float` | `30.0` | Maximum time in seconds before the call is aborted |
+| `per_attempt` | `bool` | `True` | Whether timeout applies per attempt or as a total deadline |
 
 ## Usage
 
@@ -72,6 +74,41 @@ async def async_fetch(url: str) -> dict:
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             return await resp.json()
+```
+
+### Per-Attempt vs Total Deadline
+
+By default (`per_attempt=True`), each retry attempt gets the full timeout:
+
+```
+@resilient(retry=RetryConfig(max_attempts=3), timeout=TimeoutConfig(seconds=5))
+
+Attempt 1: [─── 5s max ───] TIMEOUT!
+Attempt 2: [─── 5s max ───] TIMEOUT!
+Attempt 3: [── 3s ──] SUCCESS!
+Total: up to 15s + delays
+```
+
+With `per_attempt=False`, the timeout is a total deadline shared across all attempts:
+
+```
+@resilient(retry=RetryConfig(max_attempts=3), timeout=TimeoutConfig(seconds=5, per_attempt=False))
+
+Attempt 1: [── 3s ──] TIMEOUT!
+Attempt 2: [─ 1.5s ─] TIMEOUT! (remaining budget)
+Attempt 3: TIMEOUT! (no budget left)
+Total: 5s max
+```
+
+Use `per_attempt=False` when you have a strict SLA and need to bound total latency:
+
+```python
+@resilient(
+    retry=RetryConfig(max_attempts=3, delay=0.5),
+    timeout=TimeoutConfig(seconds=5.0, per_attempt=False),
+)
+def call_with_deadline() -> dict:
+    return requests.get("https://api.example.com").json()
 ```
 
 ### Strict Timeout (Fail Fast)

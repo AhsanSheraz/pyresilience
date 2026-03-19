@@ -16,6 +16,8 @@ class ResilienceEvent:
     attempt: int = 0             # Current attempt number
     error: BaseException = None  # The exception, if any
     detail: str = ""             # Additional context
+    context: Optional[dict] = None  # Request-scoped metadata (from resilience_context)
+    duration: Optional[float] = None  # Call duration in seconds (set on SUCCESS events)
 ```
 
 ### Event Types
@@ -36,6 +38,32 @@ class ResilienceEvent:
 | `SUCCESS` | The call succeeded |
 | `FAILURE` | The call failed (non-retryable or exhausted) |
 | `SLOW_CALL` | A call exceeded the slow call duration threshold |
+
+## Context Propagation
+
+Use `resilience_context` to attach request-scoped metadata to every event. This is useful for correlating resilience events with traces, users, or requests.
+
+```python
+from pyresilience import resilience_context
+
+# Set context for the current async task / thread
+resilience_context.set({"trace_id": "abc-123", "user_id": "u-456"})
+
+# All events emitted during this context will include:
+# event.context == {"trace_id": "abc-123", "user_id": "u-456"}
+```
+
+In a web framework, set the context in middleware:
+
+```python
+@app.middleware("http")
+async def add_resilience_context(request, call_next):
+    resilience_context.set({
+        "trace_id": request.headers.get("x-trace-id"),
+        "path": request.url.path,
+    })
+    return await call_next(request)
+```
 
 ## Custom Listeners
 
@@ -197,4 +225,89 @@ def alert_on_circuit_open(event):
 )
 def payment_service():
     ...
+```
+
+## OpenTelemetry
+
+`OpenTelemetryListener` emits spans and attributes for each resilience event, integrating with the OpenTelemetry SDK.
+
+```python
+from pyresilience import resilient, RetryConfig
+from pyresilience.contrib.otel import OpenTelemetryListener
+
+otel = OpenTelemetryListener()
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[otel])
+def call_api():
+    return requests.get("https://api.example.com").json()
+```
+
+Each event creates a span with attributes like `resilience.event_type`, `resilience.function_name`, `resilience.attempt`, and `resilience.context.*` (from `resilience_context`).
+
+!!! note
+    Requires the `opentelemetry-api` package. Install with `pip install opentelemetry-api opentelemetry-sdk`.
+
+## Prometheus
+
+`PrometheusListener` exports counters and histograms to Prometheus via the official client library.
+
+```python
+from pyresilience import resilient, RetryConfig
+from pyresilience.contrib.prometheus import PrometheusListener
+
+prom = PrometheusListener(namespace="myapp")
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[prom])
+def call_api():
+    return requests.get("https://api.example.com").json()
+```
+
+Exported metrics:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `myapp_events_total` | Counter | `event_type`, `function_name` | Total events by type and function |
+| `myapp_call_duration_seconds` | Histogram | `function_name` | Call duration on SUCCESS events |
+
+The histogram is only observed when `event.duration` is set (i.e., on SUCCESS events), so it accurately tracks successful call latencies without polluting data with non-call events like retries or circuit opens.
+
+!!! note
+    Requires the `prometheus-client` package. Install with `pip install prometheus-client`.
+
+## Health Check
+
+`health_check()` returns a summary of resilience state for all registered functions in a registry:
+
+```python
+from pyresilience import ResilienceRegistry, health_check
+
+registry = ResilienceRegistry()
+# ... register configs and decorate functions ...
+
+status = health_check(registry)
+```
+
+Returns a dict like:
+
+```python
+{
+    "payment-api": {
+        "circuit_breaker": "closed",
+        "in_flight": 3,
+        "rate_limiter_available": True,
+    },
+    "inventory-service": {
+        "circuit_breaker": "open",
+        "in_flight": 0,
+        "rate_limiter_available": True,
+    },
+}
+```
+
+Expose it from your health endpoint:
+
+```python
+@app.get("/health/resilience")
+def resilience_health():
+    return health_check(registry)
 ```

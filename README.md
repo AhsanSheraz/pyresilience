@@ -47,7 +47,7 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 - **Patterns that work together** — Circuit breaker state is shared across retries. Rate limiting respects bulkhead limits. Cache short-circuits the entire pipeline. Everything is coordinated.
 - **Zero dependencies** — Pure Python stdlib. Nothing to conflict with your stack.
 - **Sync and async** — Same API for both. Auto-detects your function type.
-- **Production observability** — Built-in event listeners for logging, metrics, and alerting. Know when circuits open, retries fire, or rate limits hit.
+- **Production observability** — Built-in event listeners for logging, metrics, and alerting. OpenTelemetry and Prometheus listeners included. Know when circuits open, retries fire, or rate limits hit.
 - **Thread-safe and async-safe** — All stateful components use locks. Async-safe latency tracking via `contextvars`. Cache stampede prevention via per-key locking.
 - **Framework integrations** — Drop-in support for [FastAPI](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), [Django](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), and [Flask](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/).
 
@@ -136,6 +136,81 @@ print(metrics.summary())
 # {"my_func": {"events": {"retry": 2, "success": 1}, "success_rate": 1.0, "avg_latency_ms": 15.2}}
 ```
 
+### Request Correlation
+
+```python
+from pyresilience import resilience_context
+
+# Set trace/request ID for the current context — propagates through all resilience events
+resilience_context.set({"trace_id": "abc-123", "request_id": "req-456"})
+```
+
+### OpenTelemetry & Prometheus
+
+```python
+from pyresilience.contrib.otel import OpenTelemetryListener
+from pyresilience.contrib.prometheus import PrometheusListener
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[OpenTelemetryListener()])
+def call_api(): ...
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[PrometheusListener()])
+def call_db(): ...
+```
+
+## Production Features
+
+### Retry Budget
+
+Prevent retry storms across your service with a shared token bucket:
+
+```python
+from pyresilience import resilient, RetryConfig, RetryBudgetConfig, RetryBudget
+
+budget = RetryBudget(RetryBudgetConfig(max_retries=100, refill_rate=10))
+
+@resilient(retry=RetryConfig(max_attempts=3, retry_budget=budget))
+def call_api(): ...
+```
+
+### Per-Attempt Timeout
+
+Apply timeout per attempt instead of a total deadline:
+
+```python
+from pyresilience import resilient, TimeoutConfig
+
+@resilient(timeout=TimeoutConfig(seconds=5, per_attempt=True))   # 5s per attempt
+def call_api(): ...
+
+@resilient(timeout=TimeoutConfig(seconds=30, per_attempt=False))  # 30s total deadline
+def call_db(): ...
+```
+
+### Health Check
+
+Inspect circuit breaker states across your registry:
+
+```python
+from pyresilience import ResilienceRegistry, health_check
+
+registry = ResilienceRegistry()
+# ... register and use services ...
+
+status = health_check(registry)
+# {"payment-api": "CLOSED", "inventory-api": "OPEN"}
+```
+
+### Graceful Shutdown
+
+Drain in-flight calls before stopping:
+
+```python
+from pyresilience import shutdown
+
+shutdown(wait=True, timeout=30)  # Wait up to 30s for in-flight calls to complete
+```
+
 ## Performance
 
 Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Silicon). Full benchmark code in [`benchmarks/`](benchmarks/).
@@ -144,53 +219,53 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 
 | Library | Mean | vs pyresilience |
 |---------|-----:|-----:|
-| bare (no decorator) | 0.05μs | — |
-| **pyresilience** | **0.73μs** | **1.0x** |
-| backoff | 1.34μs | 1.8x slower |
-| pybreaker | 0.64μs | 0.9x |
-| stamina | 6.15μs | 8.4x slower |
-| tenacity | 7.89μs | 10.8x slower |
+| bare (no decorator) | 0.07μs | — |
+| **pyresilience** | **0.64μs** | **1.0x** |
+| pybreaker | 0.64μs | 1.0x |
+| backoff | 1.29μs | 2.0x slower |
+| stamina | 5.33μs | 8.3x slower |
+| tenacity | 6.64μs | 10.4x slower |
 
-**pyresilience is 10.8x faster than tenacity on the happy path.**
+**pyresilience is 10.4x faster than tenacity on the happy path.**
 
 ### Individual Pattern Overhead (100k calls)
 
 | Pattern | Mean Latency |
 |---------|----------:|
-| Retry (happy path) | 0.73μs |
-| Circuit Breaker | 0.95μs |
-| Fallback (triggered) | 0.68μs |
-| Bulkhead | 0.66μs |
-| Rate Limiter | 0.79μs |
-| Cache (hit) | 0.58μs |
-| **All 7 patterns (cache hit)** | **0.60μs** |
+| Retry (happy path) | 0.64μs |
+| Circuit Breaker | 1.03μs |
+| Fallback (triggered) | 0.69μs |
+| Bulkhead | 0.74μs |
+| Rate Limiter | 0.89μs |
+| Cache (hit) | 0.68μs |
+| **All 7 patterns (cache hit)** | **0.67μs** |
 
 ### Throughput (10k calls, 10 threads)
 
 | Library | ops/sec |
 |---------|--------:|
-| **pyresilience** | **152,208** |
-| tenacity | 66,916 |
+| **pyresilience** | **223,934** |
+| tenacity | 58,109 |
 
-**pyresilience achieves 2.3x higher throughput under concurrent load.**
+**pyresilience achieves 3.9x higher throughput under concurrent load.**
 
 ### Async Overhead (50k calls)
 
 | Library | Mean |
 |---------|-----:|
-| **pyresilience** | **0.69μs** |
-| tenacity | 12.14μs |
+| **pyresilience** | **0.82μs** |
+| tenacity | 11.83μs |
 
-**pyresilience is 17.6x faster than tenacity for async functions.**
+**pyresilience is 14.4x faster than tenacity for async functions.**
 
 ### Memory (1,000 decorated functions)
 
 | Library | Memory |
 |---------|-------:|
-| **pyresilience** | **1,208 KB** |
-| tenacity | 2,181 KB |
+| **pyresilience** | **1,224 KB** |
+| tenacity | 2,150 KB |
 
-**pyresilience uses 45% less memory.**
+**pyresilience uses 43% less memory.**
 
 ## Comparison
 
@@ -203,6 +278,11 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 | Bulkhead | Yes | - | - | - | - |
 | Rate Limiter | Yes | - | - | - | - |
 | Cache | Yes | - | - | - | - |
+| Retry Budget | Yes | - | - | - | - |
+| Context Propagation | Yes | - | - | - | - |
+| Health Check | Yes | - | - | - | - |
+| Prometheus | Yes | - | - | - | - |
+| OpenTelemetry | Yes | - | - | - | - |
 | Unified API | Yes | - | - | - | - |
 | Zero Dependencies | Yes | Yes | - | - | - |
 | Async | Yes | Yes | - | Yes | Yes |

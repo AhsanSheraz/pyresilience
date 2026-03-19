@@ -58,10 +58,16 @@ All patterns work together, with a unified event system for observability.
 - **Type-safe** — strict mypy compatible, `py.typed` marker
 - **Sliding window circuit breaker** — failure rate % threshold, slow call detection
 - **Retry on result** — retry based on return values, not just exceptions
+- **Retry budget** — shared token pool limits cascading retries across callers
+- **Per-attempt timeout** — per-call or total deadline timeout modes
+- **Context propagation** — request-scoped metadata in every event via `resilience_context`
 - **Opinionated presets** — `http_policy()`, `db_policy()`, `queue_policy()`
-- **Structured observability** — JSON logging, metrics collection
+- **Production observability** — JSON logging, metrics, OpenTelemetry spans, Prometheus counters/histograms
+- **Health check** — inspect circuit breaker states, in-flight calls, rate limiter availability
+- **Graceful shutdown** — drain in-flight calls with configurable timeout
 - **Optional performance backends** — uvloop + orjson
 - **Python 3.9+** — tested on 3.9 through 3.14
+- **Production/Stable** — 365 tests, 96% branch coverage, 10.4x faster than tenacity
 
 ## Why Not Just Tenacity + PyBreaker?
 
