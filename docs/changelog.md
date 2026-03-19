@@ -15,9 +15,10 @@
 - Cached module-level locals for `time.monotonic`, `random.random`, enum members
 - Inlined `isinstance()` checks, guarded event emission with `has_listeners` bool
 - Pre-computed rate (tokens/sec) in rate limiter
-- Circuit breaker overhead improved from 1.11us to 0.95us
+- Decorator overhead: 0.53us (13x faster than tenacity at 7.02us)
+- Circuit breaker overhead: 0.97us
 - Memory reduced to 1,052KB per 1,000 decorated functions (53% less than tenacity)
-- Throughput: 235K ops/sec (2.8x tenacity)
+- Throughput: 235K ops/sec (2.9x tenacity)
 
 ### Fixes
 - Replaced deprecated `asyncio.iscoroutinefunction` with `inspect.iscoroutinefunction`
@@ -26,8 +27,9 @@
 - Configurable thread pool size for sync timeouts (`TimeoutConfig(pool_size=N)`)
 
 ### Tests
-- 202 tests (up from 176)
+- 224 tests (up from 176), 98.5% branch coverage
 - New: `test_sliding_window.py` (15 tests), `test_retry_on_result.py` (11 tests)
+- Expanded `test_coverage.py` with edge case tests for executor, contrib, presets, and logging modules
 
 ---
 

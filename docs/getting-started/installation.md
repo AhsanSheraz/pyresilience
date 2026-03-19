@@ -64,5 +64,5 @@ pip install -e ".[dev]"
 
 ```python
 import pyresilience
-print(pyresilience.__version__)  # 0.1.0
+print(pyresilience.__version__)  # 0.2.0
 ```

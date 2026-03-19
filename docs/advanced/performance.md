@@ -8,9 +8,9 @@ Measured with 100k calls per benchmark. These are real numbers, not estimates.
 
 | Pattern | Mean Latency (Python 3.14) |
 |---------|----------:|
-| No decorator (baseline) | 0.05us |
-| Retry (happy path, no failures) | 0.55us |
-| Circuit breaker (closed state) | 0.95us |
+| No decorator (baseline) | 0.06us |
+| Retry (happy path, no failures) | 0.53us |
+| Circuit breaker (closed state) | 0.97us |
 | Fallback (triggered) | 0.90us |
 | Bulkhead (acquire/release) | 1.08us |
 | Rate limiter (within limits) | 0.82us |
@@ -25,31 +25,31 @@ For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyre
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.67us** | **0.58us** | **0.55us** | **0.56us** |
-| tenacity | 10.75us | 7.80us | 7.47us | 7.09us |
-| backoff | 1.66us | 1.65us | 1.53us | 1.49us |
-| stamina | 9.31us | 7.49us | 7.03us | 6.72us |
+| **pyresilience** | **0.67us** | **0.58us** | **0.55us** | **0.53us** |
+| tenacity | 10.75us | 7.80us | 7.47us | 7.02us |
+| backoff | 1.66us | 1.65us | 1.53us | 1.50us |
+| stamina | 9.31us | 7.49us | 7.03us | 6.76us |
 | pybreaker | 1.25us | 0.91us | 0.86us | 0.83us |
 
 ### Throughput (10k calls, 10 threads, ops/sec)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **145,942** | **172,508** | **228,151** | **228,685** |
-| tenacity | 44,980 | 73,735 | 80,909 | 84,348 |
+| **pyresilience** | **145,942** | **172,508** | **228,151** | **234,663** |
+| tenacity | 44,980 | 73,735 | 80,909 | 82,010 |
 
 ### Async (50k calls)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.72us** |
-| tenacity | 20.46us | 17.27us | 20.51us | 20.14us |
+| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.73us** |
+| tenacity | 20.46us | 17.27us | 20.51us | 20.16us |
 
 ### Memory (1,000 decorated functions)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,202 KB** |
+| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,052 KB** |
 | tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,254 KB |
 
 ## Optional Performance Backends

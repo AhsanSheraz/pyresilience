@@ -33,21 +33,28 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `max_delay` | `float` | `60.0` | Maximum delay cap |
 | `jitter` | `bool` | `True` | Add randomized jitter |
 | `retry_on` | `Sequence[Type]` | `(Exception,)` | Exception types to retry |
+| `retry_on_result` | `Callable[[Any], bool]` | `None` | Predicate to retry based on return value |
 
 ### `TimeoutConfig`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `seconds` | `float` | `30.0` | Timeout duration |
+| `pool_size` | `int` | `4` | Thread pool size for sync timeouts |
 
 ### `CircuitBreakerConfig`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `failure_threshold` | `int` | `5` | Failures before opening |
+| `failure_threshold` | `int` | `5` | Failures before opening (consecutive count mode) |
 | `recovery_timeout` | `float` | `30.0` | Seconds before half-open |
 | `success_threshold` | `int` | `2` | Successes to close from half-open |
 | `error_types` | `Sequence[Type]` | `(Exception,)` | Failures that count |
+| `sliding_window_size` | `int` | `0` | Sliding window size (0 = consecutive count mode) |
+| `failure_rate_threshold` | `float` | `0.5` | Failure rate to trip (sliding window mode) |
+| `minimum_calls` | `int` | `0` | Min calls before evaluating thresholds |
+| `slow_call_duration` | `float` | `0.0` | Slow call threshold in seconds (0 = disabled) |
+| `slow_call_rate_threshold` | `float` | `1.0` | Slow call rate to trip the circuit |
 
 ### `FallbackConfig`
 
@@ -144,7 +151,7 @@ In-memory metrics collector.
 
 ### `EventType`
 
-`RETRY`, `RETRY_EXHAUSTED`, `TIMEOUT`, `CIRCUIT_OPEN`, `CIRCUIT_HALF_OPEN`, `CIRCUIT_CLOSED`, `FALLBACK_USED`, `BULKHEAD_REJECTED`, `RATE_LIMITED`, `CACHE_HIT`, `CACHE_MISS`, `SUCCESS`, `FAILURE`
+`RETRY`, `RETRY_EXHAUSTED`, `TIMEOUT`, `CIRCUIT_OPEN`, `CIRCUIT_HALF_OPEN`, `CIRCUIT_CLOSED`, `FALLBACK_USED`, `BULKHEAD_REJECTED`, `RATE_LIMITED`, `CACHE_HIT`, `CACHE_MISS`, `SUCCESS`, `FAILURE`, `SLOW_CALL`
 
 ## Exceptions
 

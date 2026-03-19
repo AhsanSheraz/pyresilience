@@ -54,8 +54,10 @@ src/pyresilience/
 
 tests/
     test_retry.py
+    test_retry_on_result.py
     test_timeout.py
     test_circuit_breaker.py
+    test_sliding_window.py
     test_fallback.py
     test_bulkhead.py
     test_rate_limiter.py
@@ -66,6 +68,8 @@ tests/
     test_presets.py
     test_logging.py
     test_compat.py
+    test_contrib.py
+    test_coverage.py
 ```
 
 ## Guidelines

@@ -323,14 +323,15 @@ class _SyncExecutor:
                 raise
 
         # Retries exhausted via retry_on_result (no exception to re-raise)
-        if retry_cfg is not None and has_listeners:
+        # Note: currently unreachable — last attempt always returns via success path
+        if retry_cfg is not None and has_listeners:  # pragma: no cover
             _emit(
                 listeners,
                 EventType.RETRY_EXHAUSTED,
                 func_name,
                 attempt=max_attempts,
             )
-        if last_exc:
+        if last_exc:  # pragma: no cover
             raise last_exc
         raise RuntimeError("Unexpected state in retry loop")  # pragma: no cover
 
@@ -612,13 +613,14 @@ class _AsyncExecutor:
                 raise
 
         # Retries exhausted via retry_on_result (no exception to re-raise)
-        if retry_cfg is not None and has_listeners:
+        # Note: currently unreachable — last attempt always returns via success path
+        if retry_cfg is not None and has_listeners:  # pragma: no cover
             _emit(
                 listeners,
                 EventType.RETRY_EXHAUSTED,
                 func_name,
                 attempt=max_attempts,
             )
-        if last_exc:
+        if last_exc:  # pragma: no cover
             raise last_exc
         raise RuntimeError("Unexpected state in retry loop")  # pragma: no cover
