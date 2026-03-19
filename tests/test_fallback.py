@@ -56,14 +56,48 @@ class TestFallbackSync:
         event_types = [e.event_type for e in events]
         assert EventType.FALLBACK_USED in event_types
 
-    def test_none_fallback_handler_raises_validation_error(self) -> None:
-        with pytest.raises(ValueError, match="requires a handler"):
-            FallbackConfig(handler=None)
-
-    def test_none_handler_allowed_with_empty_fallback_on(self) -> None:
-        # handler=None is valid when fallback_on is empty (no triggers)
-        cfg = FallbackConfig(handler=None, fallback_on=())
+    def test_none_handler_auto_clears_fallback_on(self) -> None:
+        # handler=None auto-clears fallback_on to prevent silently returning None
+        cfg = FallbackConfig(handler=None)
         assert cfg.handler is None
+        assert cfg.fallback_on == ()
+
+    def test_default_constructor_works(self) -> None:
+        # FallbackConfig() should work without arguments
+        cfg = FallbackConfig()
+        assert cfg.handler is None
+        assert cfg.fallback_on == ()
+
+    def test_none_handler_with_explicit_fallback_on_clears(self) -> None:
+        # handler=None always clears fallback_on to prevent silent None returns
+        cfg = FallbackConfig(handler=None, fallback_on=(ValueError,))
+        assert cfg.fallback_on == ()
+
+
+class TestAsyncFallbackHandler:
+    @pytest.mark.asyncio
+    async def test_async_fallback_handler(self) -> None:
+        """Async fallback handler is awaited in async context."""
+
+        async def async_handler(exc: Exception) -> str:
+            return f"async_caught: {exc}"
+
+        @resilient(fallback=FallbackConfig(handler=async_handler))
+        async def fails() -> str:
+            raise ValueError("boom")
+
+        result = await fails()
+        assert result == "async_caught: boom"
+
+    @pytest.mark.asyncio
+    async def test_sync_handler_in_async_context(self) -> None:
+        """Sync fallback handler still works in async context."""
+
+        @resilient(fallback=FallbackConfig(handler=lambda e: "sync_fallback"))
+        async def fails() -> str:
+            raise ValueError("boom")
+
+        assert await fails() == "sync_fallback"
 
 
 class TestFallbackAsync:

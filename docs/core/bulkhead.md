@@ -87,6 +87,19 @@ def db_query(sql: str) -> list:
         return conn.execute(sql).fetchall()
 ```
 
+## Async Loop Safety
+
+`AsyncBulkhead` automatically detects event loop changes and recreates its internal semaphore. This makes it safe to use across multiple `asyncio.run()` calls without manual cleanup:
+
+```python
+@resilient(bulkhead=BulkheadConfig(max_concurrent=5))
+async def my_func():
+    return await some_async_call()
+
+asyncio.run(my_func())  # First loop — semaphore created
+asyncio.run(my_func())  # New loop detected — semaphore recreated automatically
+```
+
 ## Events
 
 | Event | When |

@@ -113,6 +113,12 @@ async def async_get_user(user_id: int) -> dict:
             return await resp.json()
 ```
 
+## Stampede Prevention
+
+When a cache key expires under high concurrency, many threads or coroutines may simultaneously attempt to recompute the value (thundering herd). pyresilience prevents this with **per-key locking and a double-check pattern**: only one thread/coroutine computes per cache key while others wait for the result. This eliminates redundant work and protects downstream services from load spikes.
+
+No configuration is needed — stampede prevention is always active.
+
 ## Events
 
 | Event | When |

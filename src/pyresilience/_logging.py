@@ -32,7 +32,7 @@ _TERMINAL_EVENTS = frozenset(("success", "failure"))
 def _make_dumps() -> Callable[[Any], str]:
     """Create a JSON serializer, using orjson if available."""
     if importlib.util.find_spec("orjson") is not None:
-        import orjson  # type: ignore[import-not-found]
+        import orjson
 
         def _orjson_dumps(obj: Any) -> str:
             result: str = orjson.dumps(obj).decode("utf-8")

@@ -519,3 +519,59 @@ class TestAsyncCircuitBreakerInRetryPath:
         assert result == "bad"
         event_types = [e.event_type for e in events]
         assert EventType.RETRY_EXHAUSTED in event_types
+
+
+class TestCircuitBreakerManualControl:
+    def test_reset_from_open(self) -> None:
+        """reset() returns circuit to CLOSED from OPEN."""
+        cb = CircuitBreaker(CircuitBreakerConfig(failure_threshold=1, recovery_timeout=60))
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        cb.reset()
+        assert cb.state == CircuitState.CLOSED
+        assert cb.allow_request() is True
+
+    def test_force_open(self) -> None:
+        """force_open() forces circuit to OPEN."""
+        cb = CircuitBreaker(CircuitBreakerConfig())
+        assert cb.state == CircuitState.CLOSED
+        cb.force_open()
+        assert cb.state == CircuitState.OPEN
+        assert cb.allow_request() is False
+
+    def test_force_close(self) -> None:
+        """force_close() forces circuit to CLOSED from OPEN."""
+        cb = CircuitBreaker(CircuitBreakerConfig(failure_threshold=1, recovery_timeout=60))
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        cb.force_close()
+        assert cb.state == CircuitState.CLOSED
+        assert cb.allow_request() is True
+
+    def test_reset_clears_sliding_window(self) -> None:
+        """reset() clears the sliding window."""
+        cb = CircuitBreaker(
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                sliding_window_size=10,
+                minimum_calls=1,
+            )
+        )
+        cb.record_failure()
+        cb.reset()
+        assert cb.metrics["total_calls"] == 0
+
+    def test_force_close_clears_sliding_window(self) -> None:
+        """force_close() clears the sliding window."""
+        cb = CircuitBreaker(
+            CircuitBreakerConfig(
+                failure_threshold=1,
+                sliding_window_size=10,
+                minimum_calls=1,
+            )
+        )
+        cb.record_failure()
+        assert cb.state == CircuitState.OPEN
+        cb.force_close()
+        assert cb.state == CircuitState.CLOSED
+        assert cb.metrics["total_calls"] == 0

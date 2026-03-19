@@ -187,6 +187,24 @@ class TestSyncBulkheadWithListenersAndFallback:
         assert EventType.FALLBACK_USED in event_types
 
 
+class TestAsyncBulkheadLoopSafety:
+    def test_semaphore_recreated_across_loops(self) -> None:
+        """AsyncBulkhead recreates semaphore when event loop changes."""
+        config = BulkheadConfig(max_concurrent=2)
+        bulkhead = AsyncBulkhead(config)
+
+        async def use_bulkhead() -> bool:
+            return await bulkhead.acquire()
+
+        # First loop
+        result1 = asyncio.run(use_bulkhead())
+        assert result1 is True
+
+        # Second loop — different event loop, semaphore should be recreated
+        result2 = asyncio.run(use_bulkhead())
+        assert result2 is True
+
+
 class TestBulkheadConfigValidation:
     def test_max_concurrent_must_be_positive(self) -> None:
         import pytest

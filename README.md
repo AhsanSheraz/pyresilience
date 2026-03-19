@@ -48,6 +48,7 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 - **Zero dependencies** — Pure Python stdlib. Nothing to conflict with your stack.
 - **Sync and async** — Same API for both. Auto-detects your function type.
 - **Production observability** — Built-in event listeners for logging, metrics, and alerting. Know when circuits open, retries fire, or rate limits hit.
+- **Thread-safe and async-safe** — All stateful components use locks. Async-safe latency tracking via `contextvars`. Cache stampede prevention via per-key locking.
 - **Framework integrations** — Drop-in support for [FastAPI](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), [Django](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), and [Flask](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/).
 
 ## All Seven Patterns
@@ -137,70 +138,71 @@ print(metrics.summary())
 
 ## Performance
 
-Benchmarked against tenacity, backoff, stamina, and pybreaker across Python 3.10 — 3.14 on macOS (Apple Silicon). Full benchmark code in [`benchmarks/`](benchmarks/).
+Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Silicon). Full benchmark code in [`benchmarks/`](benchmarks/).
 
 ### Decorator Overhead (no-op function, 100k calls)
 
-| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---------|----------:|----------:|----------:|----------:|
-| bare (no decorator) | 0.12us | 0.08us | 0.04us | 0.05us |
-| **pyresilience** | **0.67us** | **0.58us** | **0.55us** | **0.56us** |
-| tenacity | 10.75us | 7.80us | 7.47us | 7.31us |
-| backoff | 1.66us | 1.65us | 1.53us | 1.52us |
-| stamina | 9.31us | 7.49us | 7.03us | 6.90us |
-| pybreaker | 1.25us | 0.91us | 0.86us | 0.87us |
+| Library | Mean | vs pyresilience |
+|---------|-----:|-----:|
+| bare (no decorator) | 0.05μs | — |
+| **pyresilience** | **0.73μs** | **1.0x** |
+| backoff | 1.34μs | 1.8x slower |
+| pybreaker | 0.64μs | 0.9x |
+| stamina | 6.15μs | 8.4x slower |
+| tenacity | 7.89μs | 10.8x slower |
 
-**pyresilience is 12-13x faster than tenacity on the happy path.**
+**pyresilience is 10.8x faster than tenacity on the happy path.**
 
-### Retry Performance (fail 2x, succeed on 3rd, 10k calls)
-
-| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | 3,786us | 3,807us | 3,828us | 3,821us |
-| tenacity | 2,681us | 2,667us | 2,703us | 2,709us |
-| backoff | 1,371us | 1,380us | 1,423us | 1,380us |
-| stamina | 2,809us | 2,742us | 2,833us | 2,921us |
-
-*Retry timings are dominated by `time.sleep(0.001)` which has ~1.2ms OS scheduler overhead per call. pyresilience's higher time reflects its full pipeline (circuit breaker tracking, event system) running on every attempt.*
-
-### Individual Pattern Overhead (Python 3.14, 100k calls)
+### Individual Pattern Overhead (100k calls)
 
 | Pattern | Mean Latency |
 |---------|----------:|
-| Retry (happy path) | 0.55us |
-| Circuit Breaker | 0.99us |
-| Fallback (triggered) | 0.67us |
-| Bulkhead | 0.78us |
-| Rate Limiter | 0.84us |
-| Cache (hit) | 0.66us |
-| **All 7 patterns (cache hit)** | **0.66us** |
+| Retry (happy path) | 0.73μs |
+| Circuit Breaker | 0.95μs |
+| Fallback (triggered) | 0.68μs |
+| Bulkhead | 0.66μs |
+| Rate Limiter | 0.79μs |
+| Cache (hit) | 0.58μs |
+| **All 7 patterns (cache hit)** | **0.60μs** |
 
 ### Throughput (10k calls, 10 threads)
 
-| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **145,942** | **172,508** | **228,151** | **241,822** |
-| tenacity | 44,980 | 73,735 | 80,909 | 86,976 |
+| Library | ops/sec |
+|---------|--------:|
+| **pyresilience** | **152,208** |
+| tenacity | 66,916 |
 
-**pyresilience achieves 2.8-3.2x higher throughput under concurrent load.**
+**pyresilience achieves 2.3x higher throughput under concurrent load.**
 
 ### Async Overhead (50k calls)
 
-| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.72us** |
-| tenacity | 20.46us | 17.27us | 20.51us | 19.85us |
+| Library | Mean |
+|---------|-----:|
+| **pyresilience** | **0.69μs** |
+| tenacity | 12.14μs |
 
-**pyresilience is 24-28x faster than tenacity for async functions.**
+**pyresilience is 17.6x faster than tenacity for async functions.**
 
 ### Memory (1,000 decorated functions)
 
-| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,104 KB** |
-| tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,255 KB |
+| Library | Memory |
+|---------|-------:|
+| **pyresilience** | **1,208 KB** |
+| tenacity | 2,181 KB |
 
-**pyresilience uses ~51% less memory.**
+**pyresilience uses 45% less memory.**
+
+## What's New in v0.3.0
+
+- **Cache stampede prevention** — Per-key locking prevents thundering herd on cache miss
+- **Circuit breaker manual control** — `reset()`, `force_open()`, `force_close()` for operational needs
+- **Async fallback handlers** — Fallback handler can be an async function
+- **Sync timeout thread cancellation** — Best-effort thread interrupt via `PyThreadState_SetAsyncExc`
+- **Thread-safe circuit breaker** — Atomic state transitions, re-checked between retries
+- **Async-safe metrics** — `contextvars`-based call tracking replaces thread-ID
+- **AsyncBulkhead loop safety** — Auto-recreates semaphore across event loop changes
+- **Jitter floor** — 10% minimum delay prevents zero-delay retry storms
+- **mypy strict clean** — Zero type errors
 
 ## Comparison
 

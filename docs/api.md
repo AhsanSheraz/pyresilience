@@ -56,12 +56,27 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `slow_call_duration` | `float` | `0.0` | Slow call threshold in seconds (0 = disabled) |
 | `slow_call_rate_threshold` | `float` | `1.0` | Slow call rate to trip the circuit |
 
+### `CircuitBreaker` (direct usage)
+
+| Method | Description |
+|--------|-------------|
+| `allow_request()` | Check if a call is allowed |
+| `record_success()` | Record a successful call |
+| `record_failure()` | Record a failed call |
+| `reset()` | Reset to CLOSED state with zeroed counters |
+| `force_open()` | Force transition to OPEN state |
+| `force_close()` | Force transition to CLOSED state |
+| `state` | Current `CircuitState` |
+| `metrics` | Real-time metrics dict (failure_rate, slow_call_rate, total_calls, state) |
+
 ### `FallbackConfig`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `handler` | `Callable or Any` | `None` | Fallback value or `fn(exc)` |
-| `fallback_on` | `Sequence[Type]` | `(Exception,)` | Exceptions triggering fallback |
+| `handler` | `Callable or Any` | `None` | Fallback value, `fn(exc)`, or async `fn(exc)`. When `None`, `fallback_on` is auto-cleared to `()` |
+| `fallback_on` | `Sequence[Type]` | `(Exception,)` | Exceptions triggering fallback. Auto-cleared when `handler=None` |
+
+`FallbackConfig()` is safe to call with no arguments. The handler can be an async function when decorating async functions.
 
 ### `BulkheadConfig`
 

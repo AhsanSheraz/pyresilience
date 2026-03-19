@@ -17,8 +17,11 @@ Attempt 2: [── 3s ──] SUCCESS!
 
 | Mode | How it works |
 |------|-------------|
-| **Sync** | Runs the function in a thread pool, uses `future.result(timeout=...)` |
+| **Sync** | Runs the function in a thread pool, uses `future.result(timeout=...)` with best-effort thread cancellation |
 | **Async** | Uses `asyncio.wait_for(coro, timeout=...)` |
+
+!!! note "Thread Cancellation (Sync)"
+    On CPython, when a sync function exceeds its timeout, pyresilience uses `ctypes.pythonapi.PyThreadState_SetAsyncExc` for best-effort thread interruption. This raises an exception in the worker thread so it can clean up. However, blocking C extensions (e.g., `socket.recv()` without a timeout) cannot be interrupted. The original exception chain is preserved via `from exc`.
 
 ## Configuration
 

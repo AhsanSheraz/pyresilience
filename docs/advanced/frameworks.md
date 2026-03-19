@@ -173,3 +173,17 @@ async def my_service_call():
 ```
 
 The framework integrations are convenience wrappers — the core `@resilient()` decorator works everywhere.
+
+!!! tip "Async Fallback Handlers"
+    When using async frameworks (FastAPI, async Django), your `FallbackConfig.handler` can be an async function. pyresilience detects this automatically and awaits the handler:
+
+    ```python
+    async def async_fallback(exc: Exception) -> dict:
+        return {"status": "degraded", "error": str(exc)}
+
+    @resilient(
+        fallback=FallbackConfig(handler=async_fallback, fallback_on=(Exception,)),
+    )
+    async def my_endpoint():
+        return await external_service.call()
+    ```

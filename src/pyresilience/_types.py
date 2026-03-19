@@ -161,11 +161,10 @@ class FallbackConfig:
     fallback_on: Sequence[Type[BaseException]] = (Exception,)
 
     def __post_init__(self) -> None:
-        if self.fallback_on and self.handler is None:
-            raise ValueError(
-                "FallbackConfig requires a handler (callable) or a non-None static value "
-                "when fallback_on is set"
-            )
+        if self.handler is None:
+            # When no handler is set, disable fallback triggers to prevent
+            # silently returning None on exceptions
+            self.fallback_on = ()
 
 
 @dataclass

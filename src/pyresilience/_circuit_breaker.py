@@ -216,6 +216,31 @@ class CircuitBreaker:
                 self._state = _OPEN
                 self._last_failure_time = _monotonic()
 
+    def reset(self) -> None:
+        """Reset circuit breaker to CLOSED state, clearing all counters."""
+        with self._lock:
+            self._state = _CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            self._last_failure_time = None
+            if self._window is not None:
+                self._window.clear()
+
+    def force_open(self) -> None:
+        """Force circuit to OPEN state."""
+        with self._lock:
+            self._state = _OPEN
+            self._last_failure_time = _monotonic()
+
+    def force_close(self) -> None:
+        """Force circuit to CLOSED state, clearing all counters."""
+        with self._lock:
+            self._state = _CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            if self._window is not None:
+                self._window.clear()
+
     @property
     def metrics(self) -> dict[str, Any]:
         """Get current circuit breaker metrics.

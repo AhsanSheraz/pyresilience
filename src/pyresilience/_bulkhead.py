@@ -53,15 +53,25 @@ class Bulkhead:
 
 
 class AsyncBulkhead:
-    """Async bulkhead for async code."""
+    """Async bulkhead for async code.
+
+    Detects event loop changes and recreates the semaphore to avoid using
+    a stale semaphore from a previous loop (e.g., across asyncio.run() calls).
+    """
 
     def __init__(self, config: BulkheadConfig) -> None:
         self._config = config
         self._semaphore: Optional[asyncio.Semaphore] = None
+        self._loop_id: Optional[int] = None
 
     def _get_semaphore(self) -> asyncio.Semaphore:
-        if self._semaphore is None:
+        try:
+            loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            loop_id = None
+        if self._semaphore is None or (loop_id is not None and self._loop_id != loop_id):
             self._semaphore = asyncio.Semaphore(self._config.max_concurrent)
+            self._loop_id = loop_id
         return self._semaphore
 
     async def acquire(self) -> bool:

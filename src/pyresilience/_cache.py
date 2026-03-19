@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from collections import OrderedDict
@@ -38,7 +39,16 @@ class ResultCache:
     Uses OrderedDict for O(1) LRU eviction and monotonic clock for TTL.
     """
 
-    __slots__ = ("_hits", "_lock", "_max_size", "_misses", "_store", "_ttl")
+    __slots__ = (
+        "_hits",
+        "_key_locks",
+        "_key_locks_lock",
+        "_lock",
+        "_max_size",
+        "_misses",
+        "_store",
+        "_ttl",
+    )
 
     def __init__(self, config: CacheConfig) -> None:
         self._max_size = config.max_size
@@ -47,6 +57,9 @@ class ResultCache:
         self._store: OrderedDict[Any, tuple[Any, float]] = OrderedDict()
         self._hits = 0
         self._misses = 0
+        # Per-key locks for cache stampede prevention (single-flight)
+        self._key_locks: dict[Any, threading.Lock] = {}
+        self._key_locks_lock = threading.Lock()
 
     @staticmethod
     def make_key(*args: Any, **kwargs: Any) -> Any:
@@ -90,12 +103,23 @@ class ResultCache:
                 return True
             return False
 
+    def get_key_lock(self, key: Any) -> threading.Lock:
+        """Get a per-key lock for cache stampede prevention."""
+        with self._key_locks_lock:
+            lock = self._key_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._key_locks[key] = lock
+            return lock
+
     def clear(self) -> None:
         """Clear all cached entries and reset stats."""
         with self._lock:
             self._store.clear()
             self._hits = 0
             self._misses = 0
+        with self._key_locks_lock:
+            self._key_locks.clear()
 
     @property
     def size(self) -> int:
@@ -120,6 +144,9 @@ class AsyncResultCache:
 
     def __init__(self, config: CacheConfig) -> None:
         self._cache = ResultCache(config)
+        # Per-key async locks for cache stampede prevention
+        self._async_key_locks: dict[Any, asyncio.Lock] = {}
+        self._async_key_locks_lock = threading.Lock()
 
     @staticmethod
     def make_key(*args: Any, **kwargs: Any) -> Any:
@@ -134,8 +161,19 @@ class AsyncResultCache:
     def invalidate(self, key: Any) -> bool:
         return self._cache.invalidate(key)
 
+    def get_async_key_lock(self, key: Any) -> asyncio.Lock:
+        """Get a per-key async lock for cache stampede prevention."""
+        with self._async_key_locks_lock:
+            lock = self._async_key_locks.get(key)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._async_key_locks[key] = lock
+            return lock
+
     def clear(self) -> None:
         self._cache.clear()
+        with self._async_key_locks_lock:
+            self._async_key_locks.clear()
 
     @property
     def size(self) -> int:

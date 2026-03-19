@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import ctypes
 import logging
 import os
 import random
@@ -69,6 +70,35 @@ atexit.register(_shutdown_pools)
 # Cache random.random locally to avoid attribute lookup in hot path
 _random = random.random
 
+# Best-effort thread cancellation support (CPython only)
+_HAS_ASYNC_EXC = hasattr(ctypes, "pythonapi")
+if _HAS_ASYNC_EXC:
+    ctypes.pythonapi.PyThreadState_SetAsyncExc.argtypes = [ctypes.c_ulong, ctypes.py_object]
+    ctypes.pythonapi.PyThreadState_SetAsyncExc.restype = ctypes.c_int
+
+
+def _interrupt_thread(thread_id: int) -> bool:
+    """Best-effort interrupt of a running thread by raising ResilienceTimeoutError.
+
+    CPython-only. The exception is raised at the next Python bytecode boundary.
+    Will NOT interrupt blocking C extensions (e.g., time.sleep, socket.recv).
+    Returns True if the exception was successfully scheduled.
+    """
+    if not _HAS_ASYNC_EXC:
+        return False
+    try:
+        ret: int = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+            ctypes.c_ulong(thread_id),
+            ctypes.py_object(ResilienceTimeoutError),
+        )
+        if ret > 1:
+            # Affected more than one thread state — clear to prevent corruption
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), None)
+            return False
+        return ret == 1
+    except Exception:
+        return False
+
 
 def _emit(
     listeners: list[ResilienceListener],
@@ -112,6 +142,19 @@ def _apply_fallback(fallback_cfg: FallbackConfig, exc: BaseException) -> Any:
     """Apply fallback handler or return static fallback value."""
     handler = fallback_cfg.handler
     if callable(handler):
+        return handler(exc)
+    return handler
+
+
+async def _apply_fallback_async(fallback_cfg: FallbackConfig, exc: BaseException) -> Any:
+    """Apply fallback handler with async support.
+
+    If the handler is an async function, awaits it. Otherwise, calls it synchronously.
+    """
+    handler = fallback_cfg.handler
+    if callable(handler):
+        if asyncio.iscoroutinefunction(handler):
+            return await handler(exc)
         return handler(exc)
     return handler
 
@@ -201,6 +244,7 @@ class _SyncExecutor:
 
         # Cache check — fast path for repeated calls
         cache_key: Any = None
+        cache_key_lock: Optional[threading.Lock] = None
         if cache is not None:
             cache_key = ResultCache.make_key(*args, **kwargs)
             cached = cache.get(cache_key)
@@ -210,67 +254,86 @@ class _SyncExecutor:
                 return cached
             if has_listeners:
                 _emit(listeners, EventType.CACHE_MISS, func_name)
-
-        # Circuit breaker — reject immediately when open
-        circuit_breaker = self._circuit_breaker
-        if circuit_breaker is not None and not circuit_breaker.allow_request():
-            if has_listeners:
-                _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
-            if fallback_cfg is not None:
+            # Stampede prevention: per-key lock ensures only one thread computes
+            cache_key_lock = cache.get_key_lock(cache_key)
+            cache_key_lock.acquire()
+            # Double-check: another thread may have cached the value while we waited
+            cached = cache.get(cache_key)
+            if cached is not _SENTINEL:
+                cache_key_lock.release()
+                cache_key_lock = None
                 if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, CircuitOpenError("Circuit breaker is open"))
-            raise CircuitOpenError("Circuit breaker is open")
-
-        # Rate limiter
-        rate_limiter = self._rate_limiter
-        if rate_limiter is not None and not rate_limiter.acquire():
-            if has_listeners:
-                _emit(listeners, EventType.RATE_LIMITED, func_name)
-            if fallback_cfg is not None:
-                if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, RateLimitExceededError("Rate limit exceeded"))
-            raise RateLimitExceededError("Rate limit exceeded")
-
-        # Bulkhead
-        bulkhead = self._bulkhead
-        if bulkhead is not None and not bulkhead.acquire():
-            if has_listeners:
-                _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
-            if fallback_cfg is not None:
-                if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
-            raise BulkheadFullError("Bulkhead full")
-
-        # Track whether we currently hold the bulkhead slot
-        bulkhead_held = [bulkhead is not None]
+                    _emit(listeners, EventType.CACHE_HIT, func_name)
+                return cached
 
         try:
-            # Fast path: no retry, no timeout — direct call
-            if self._fast_path:
-                result = self._execute_direct(
-                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
-                )
-            else:
-                result = self._execute_with_retry(
-                    func,
-                    func_name,
-                    listeners,
-                    has_listeners,
-                    circuit_breaker,
-                    bulkhead,
-                    bulkhead_held,
-                    *args,
-                    **kwargs,
-                )
-            if cache is not None and cache_key is not None:
-                cache.put(cache_key, result)
-            return result
+            # Circuit breaker — reject immediately when open
+            circuit_breaker = self._circuit_breaker
+            if circuit_breaker is not None and not circuit_breaker.allow_request():
+                if has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(
+                        fallback_cfg, CircuitOpenError("Circuit breaker is open")
+                    )
+                raise CircuitOpenError("Circuit breaker is open")
+
+            # Rate limiter
+            rate_limiter = self._rate_limiter
+            if rate_limiter is not None and not rate_limiter.acquire():
+                if has_listeners:
+                    _emit(listeners, EventType.RATE_LIMITED, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(
+                        fallback_cfg, RateLimitExceededError("Rate limit exceeded")
+                    )
+                raise RateLimitExceededError("Rate limit exceeded")
+
+            # Bulkhead
+            bulkhead = self._bulkhead
+            if bulkhead is not None and not bulkhead.acquire():
+                if has_listeners:
+                    _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
+                raise BulkheadFullError("Bulkhead full")
+
+            # Track whether we currently hold the bulkhead slot
+            bulkhead_held = [bulkhead is not None]
+
+            try:
+                # Fast path: no retry, no timeout — direct call
+                if self._fast_path:
+                    result = self._execute_direct(
+                        func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                    )
+                else:
+                    result = self._execute_with_retry(
+                        func,
+                        func_name,
+                        listeners,
+                        has_listeners,
+                        circuit_breaker,
+                        bulkhead,
+                        bulkhead_held,
+                        *args,
+                        **kwargs,
+                    )
+                if cache is not None and cache_key is not None:
+                    cache.put(cache_key, result)
+                return result
+            finally:
+                if bulkhead_held[0]:
+                    bulkhead.release()  # type: ignore[union-attr]
         finally:
-            if bulkhead_held[0]:
-                bulkhead.release()  # type: ignore[union-attr]
+            if cache_key_lock is not None:
+                cache_key_lock.release()
 
     def _execute_direct(
         self,
@@ -488,17 +551,22 @@ class _SyncExecutor:
         **kwargs: Any,
     ) -> Any:
         timeout_seconds = self._timeout_seconds
-        cancel_event = threading.Event()
+        thread_id_holder: list[int] = []
 
         def _wrapper() -> Any:
+            thread_id_holder.append(threading.get_ident())
             return func(*args, **kwargs)
 
         future = self._timeout_pool.submit(_wrapper)
         try:
             return future.result(timeout=timeout_seconds)
         except (TimeoutError, FuturesTimeoutError) as exc:
-            cancel_event.set()
             future.cancel()
+            # Best-effort: try to interrupt the running thread (CPython only).
+            # This raises ResilienceTimeoutError at the next Python bytecode
+            # boundary. Will NOT interrupt blocking C extensions.
+            if thread_id_holder:
+                _interrupt_thread(thread_id_holder[0])
             if self._has_listeners:
                 _emit(
                     listeners,
@@ -507,9 +575,7 @@ class _SyncExecutor:
                     detail=f"exceeded {timeout_seconds}s",
                 )
             raise ResilienceTimeoutError(
-                f"{func_name} exceeded timeout of {timeout_seconds}s. "
-                "Note: the underlying thread may still be running — "
-                "Python threads cannot be forcibly interrupted.",
+                f"{func_name} exceeded timeout of {timeout_seconds}s"
             ) from exc
 
 
@@ -593,6 +659,7 @@ class _AsyncExecutor:
 
         # Cache check
         cache_key: Any = None
+        cache_key_lock: Optional[asyncio.Lock] = None
         if cache is not None:
             cache_key = AsyncResultCache.make_key(*args, **kwargs)
             cached = cache.get(cache_key)
@@ -602,66 +669,87 @@ class _AsyncExecutor:
                 return cached
             if has_listeners:
                 _emit(listeners, EventType.CACHE_MISS, func_name)
-
-        # Circuit breaker
-        circuit_breaker = self._circuit_breaker
-        if circuit_breaker is not None and not circuit_breaker.allow_request():
-            if has_listeners:
-                _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
-            if fallback_cfg is not None:
+            # Stampede prevention: per-key lock ensures only one coroutine computes
+            cache_key_lock = cache.get_async_key_lock(cache_key)
+            await cache_key_lock.acquire()
+            # Double-check: another coroutine may have cached the value while we waited
+            cached = cache.get(cache_key)
+            if cached is not _SENTINEL:
+                cache_key_lock.release()
+                cache_key_lock = None
                 if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, CircuitOpenError("Circuit breaker is open"))
-            raise CircuitOpenError("Circuit breaker is open")
-
-        # Rate limiter
-        rate_limiter = self._rate_limiter
-        if rate_limiter is not None and not await rate_limiter.acquire():
-            if has_listeners:
-                _emit(listeners, EventType.RATE_LIMITED, func_name)
-            if fallback_cfg is not None:
-                if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, RateLimitExceededError("Rate limit exceeded"))
-            raise RateLimitExceededError("Rate limit exceeded")
-
-        # Bulkhead
-        bulkhead = self._bulkhead
-        if bulkhead is not None and not await bulkhead.acquire():
-            if has_listeners:
-                _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
-            if fallback_cfg is not None:
-                if has_listeners:
-                    _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
-            raise BulkheadFullError("Bulkhead full")
-
-        # Track whether we currently hold the bulkhead slot
-        bulkhead_held = [bulkhead is not None]
+                    _emit(listeners, EventType.CACHE_HIT, func_name)
+                return cached
 
         try:
-            if self._fast_path:
-                result = await self._execute_direct(
-                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
-                )
-            else:
-                result = await self._execute_with_retry(
-                    func,
-                    func_name,
-                    listeners,
-                    has_listeners,
-                    circuit_breaker,
-                    bulkhead,
-                    bulkhead_held,
-                    *args,
-                    **kwargs,
-                )
-            if cache is not None and cache_key is not None:
-                cache.put(cache_key, result)
-            return result
+            # Circuit breaker
+            circuit_breaker = self._circuit_breaker
+            if circuit_breaker is not None and not circuit_breaker.allow_request():
+                if has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return await _apply_fallback_async(
+                        fallback_cfg, CircuitOpenError("Circuit breaker is open")
+                    )
+                raise CircuitOpenError("Circuit breaker is open")
+
+            # Rate limiter
+            rate_limiter = self._rate_limiter
+            if rate_limiter is not None and not await rate_limiter.acquire():
+                if has_listeners:
+                    _emit(listeners, EventType.RATE_LIMITED, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return await _apply_fallback_async(
+                        fallback_cfg, RateLimitExceededError("Rate limit exceeded")
+                    )
+                raise RateLimitExceededError("Rate limit exceeded")
+
+            # Bulkhead
+            bulkhead = self._bulkhead
+            if bulkhead is not None and not await bulkhead.acquire():
+                if has_listeners:
+                    _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
+                if fallback_cfg is not None:
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name)
+                    return await _apply_fallback_async(
+                        fallback_cfg, BulkheadFullError("Bulkhead full")
+                    )
+                raise BulkheadFullError("Bulkhead full")
+
+            # Track whether we currently hold the bulkhead slot
+            bulkhead_held = [bulkhead is not None]
+
+            try:
+                if self._fast_path:
+                    result = await self._execute_direct(
+                        func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                    )
+                else:
+                    result = await self._execute_with_retry(
+                        func,
+                        func_name,
+                        listeners,
+                        has_listeners,
+                        circuit_breaker,
+                        bulkhead,
+                        bulkhead_held,
+                        *args,
+                        **kwargs,
+                    )
+                if cache is not None and cache_key is not None:
+                    cache.put(cache_key, result)
+                return result
+            finally:
+                if bulkhead_held[0]:
+                    bulkhead.release()  # type: ignore[union-attr]
         finally:
-            if bulkhead_held[0]:
-                bulkhead.release()  # type: ignore[union-attr]
+            if cache_key_lock is not None:
+                cache_key_lock.release()
 
     async def _execute_direct(
         self,
@@ -697,7 +785,7 @@ class _AsyncExecutor:
             if fallback_cfg is not None and isinstance(exc, fallback_on):
                 if has_listeners:
                     _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
-                return _apply_fallback(fallback_cfg, exc)
+                return await _apply_fallback_async(fallback_cfg, exc)
             if has_listeners:
                 _emit(listeners, EventType.FAILURE, func_name, error=exc)
             raise
@@ -737,7 +825,7 @@ class _AsyncExecutor:
                 if fallback_cfg is not None and isinstance(err, fallback_on):
                     if has_listeners:
                         _emit(listeners, EventType.FALLBACK_USED, func_name)
-                    return _apply_fallback(fallback_cfg, err)
+                    return await _apply_fallback_async(fallback_cfg, err)
                 raise err
 
             try:
@@ -862,7 +950,7 @@ class _AsyncExecutor:
                 if fallback_cfg is not None and isinstance(exc, fallback_on):
                     if has_listeners:
                         _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
-                    return _apply_fallback(fallback_cfg, exc)
+                    return await _apply_fallback_async(fallback_cfg, exc)
 
                 if has_listeners:
                     _emit(listeners, EventType.FAILURE, func_name, error=exc)
