@@ -192,18 +192,6 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 
 **pyresilience uses 45% less memory.**
 
-## What's New in v0.3.0
-
-- **Cache stampede prevention** — Per-key locking prevents thundering herd on cache miss
-- **Circuit breaker manual control** — `reset()`, `force_open()`, `force_close()` for operational needs
-- **Async fallback handlers** — Fallback handler can be an async function
-- **Sync timeout thread cancellation** — Best-effort thread interrupt via `PyThreadState_SetAsyncExc`
-- **Thread-safe circuit breaker** — Atomic state transitions, re-checked between retries
-- **Async-safe metrics** — `contextvars`-based call tracking replaces thread-ID
-- **AsyncBulkhead loop safety** — Auto-recreates semaphore across event loop changes
-- **Jitter floor** — 10% minimum delay prevents zero-delay retry storms
-- **mypy strict clean** — Zero type errors
-
 ## Comparison
 
 | | pyresilience | tenacity | pybreaker | backoff | stamina |
