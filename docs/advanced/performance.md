@@ -8,14 +8,14 @@ Measured with 100k calls per benchmark. These are real numbers, not estimates.
 
 | Pattern | Mean Latency (Python 3.14) |
 |---------|----------:|
-| No decorator (baseline) | 0.11us |
-| Retry (happy path, no failures) | 0.56us |
-| Circuit breaker (closed state) | 1.04us |
+| No decorator (baseline) | 0.05us |
+| Retry (happy path, no failures) | 0.55us |
+| Circuit breaker (closed state) | 0.95us |
 | Fallback (triggered) | 0.90us |
-| Bulkhead (acquire/release) | 1.09us |
-| Rate limiter (within limits) | 0.86us |
-| Cache (hit) | 0.95us |
-| **All 7 patterns combined (cache hit)** | **0.98us** |
+| Bulkhead (acquire/release) | 1.08us |
+| Rate limiter (within limits) | 0.82us |
+| Cache (hit) | 0.91us |
+| **All 7 patterns combined (cache hit)** | **0.92us** |
 
 For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyresilience's overhead is <0.02%.
 

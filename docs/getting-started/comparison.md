@@ -59,13 +59,13 @@ Full benchmark code in [`benchmarks/`](https://github.com/AhsanSheraz/pyresilien
 
 | Pattern | Mean Latency |
 |---------|----------:|
-| Retry (happy path) | 0.56us |
-| Circuit Breaker | 1.04us |
+| Retry (happy path) | 0.55us |
+| Circuit Breaker | 0.95us |
 | Fallback (triggered) | 0.90us |
-| Bulkhead | 1.09us |
-| Rate Limiter | 0.86us |
-| Cache (hit) | 0.95us |
-| **All 7 patterns (cache hit)** | **0.98us** |
+| Bulkhead | 1.08us |
+| Rate Limiter | 0.82us |
+| Cache (hit) | 0.91us |
+| **All 7 patterns (cache hit)** | **0.92us** |
 
 ### Throughput (10k calls, 10 threads)
 

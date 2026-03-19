@@ -10,22 +10,22 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pyresilience._types import CacheConfig
 
-
 _SENTINEL = object()
+_monotonic = time.monotonic
 
 
 class ResultCache:
     """Thread-safe LRU result cache with TTL support.
 
-    Caches function results keyed by arguments. Expired and evicted entries
-    are cleaned up automatically.
+    Uses OrderedDict for O(1) LRU eviction and monotonic clock for TTL.
     """
+
+    __slots__ = ("_hits", "_lock", "_max_size", "_misses", "_store", "_ttl")
 
     def __init__(self, config: CacheConfig) -> None:
         self._max_size = config.max_size
         self._ttl = config.ttl
         self._lock = threading.Lock()
-        # OrderedDict for LRU: most recently used at the end
         self._store: OrderedDict[str, tuple[Any, float]] = OrderedDict()
         self._hits = 0
         self._misses = 0
@@ -46,13 +46,11 @@ class ResultCache:
                 return _SENTINEL
 
             value, timestamp = entry
-            if self._ttl > 0 and (time.monotonic() - timestamp) > self._ttl:
-                # Expired
+            if self._ttl > 0 and (_monotonic() - timestamp) > self._ttl:
                 del self._store[key]
                 self._misses += 1
                 return _SENTINEL
 
-            # Move to end (most recently used)
             self._store.move_to_end(key)
             self._hits += 1
             return value
@@ -62,9 +60,9 @@ class ResultCache:
         with self._lock:
             if key in self._store:
                 self._store.move_to_end(key)
-            self._store[key] = (value, time.monotonic())
+            self._store[key] = (value, _monotonic())
 
-            # Evict oldest if over capacity
+            # Evict oldest entries if over capacity
             while len(self._store) > self._max_size:
                 self._store.popitem(last=False)
 
@@ -85,13 +83,11 @@ class ResultCache:
 
     @property
     def size(self) -> int:
-        """Current number of entries."""
         with self._lock:
             return len(self._store)
 
     @property
     def stats(self) -> dict[str, Any]:
-        """Cache hit/miss statistics."""
         with self._lock:
             total = self._hits + self._misses
             return {
