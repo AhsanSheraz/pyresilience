@@ -122,7 +122,7 @@ class AsyncResultCache:
         self._cache = ResultCache(config)
 
     @staticmethod
-    def make_key(*args: Any, **kwargs: Any) -> str:
+    def make_key(*args: Any, **kwargs: Any) -> Any:
         return ResultCache.make_key(*args, **kwargs)
 
     def get(self, key: Any) -> Any:
