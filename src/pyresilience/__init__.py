@@ -9,6 +9,11 @@ from pyresilience._cache import AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
 from pyresilience._compat import has_orjson, has_uvloop, install_uvloop
 from pyresilience._decorator import resilient
+from pyresilience._exceptions import (
+    CircuitOpenError,
+    ResilienceError,
+    ResilienceTimeoutError,
+)
 from pyresilience._logging import JsonEventLogger, MetricsCollector
 from pyresilience._presets import db_policy, http_policy, queue_policy, strict_policy
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
@@ -38,6 +43,7 @@ __all__ = [
     "CacheConfig",
     "CircuitBreaker",
     "CircuitBreakerConfig",
+    "CircuitOpenError",
     "CircuitState",
     "EventType",
     "FallbackConfig",
@@ -47,9 +53,11 @@ __all__ = [
     "RateLimiter",
     "RateLimiterConfig",
     "ResilienceConfig",
+    "ResilienceError",
     "ResilienceEvent",
     "ResilienceListener",
     "ResilienceRegistry",
+    "ResilienceTimeoutError",
     "ResultCache",
     "RetryConfig",
     "TimeoutConfig",

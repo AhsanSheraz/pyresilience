@@ -10,28 +10,49 @@ if TYPE_CHECKING:
     from pyresilience._types import BulkheadConfig
 
 
-class BulkheadFullError(Exception):
-    """Raised when the bulkhead has no available slots."""
+from pyresilience._exceptions import BulkheadFullError as BulkheadFullError
 
 
 class Bulkhead:
-    """Thread-safe bulkhead for sync code."""
+    """Thread-safe bulkhead for sync code.
+
+    Uses a lightweight lock + counter for non-waiting mode (max_wait=0),
+    falling back to Semaphore only when waiting is needed.
+    """
 
     def __init__(self, config: BulkheadConfig) -> None:
-        self._semaphore = threading.Semaphore(config.max_concurrent)
+        self._max_concurrent = config.max_concurrent
         self._max_wait = config.max_wait
+        if config.max_wait > 0:
+            self._semaphore: Optional[threading.Semaphore] = threading.Semaphore(
+                config.max_concurrent
+            )
+            self._lock: Optional[threading.Lock] = None
+            self._count = 0
+        else:
+            self._semaphore = None
+            self._lock = threading.Lock()
+            self._count = 0
 
     def acquire(self) -> bool:
         """Try to acquire a slot. Returns True if successful."""
-        timeout: Optional[float] = self._max_wait if self._max_wait > 0 else None
-        if timeout is None:
-            # Try without blocking
-            return self._semaphore.acquire(blocking=False)
-        return self._semaphore.acquire(timeout=timeout)
+        if self._lock is not None:
+            with self._lock:
+                if self._count >= self._max_concurrent:
+                    return False
+                self._count += 1
+                return True
+        assert self._semaphore is not None
+        return self._semaphore.acquire(timeout=self._max_wait)
 
     def release(self) -> None:
         """Release a slot."""
-        self._semaphore.release()
+        if self._lock is not None:
+            with self._lock:
+                self._count -= 1
+        else:
+            assert self._semaphore is not None
+            self._semaphore.release()
 
 
 class AsyncBulkhead:

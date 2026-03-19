@@ -63,9 +63,11 @@ class ResilientMiddleware:
             await self.app(scope, receive, send)
 
         try:
-            await self.executor.execute(_handle)
-        except RuntimeError as exc:
-            if "circuit breaker is open" in str(exc).lower():
+            await self.executor.execute(_handle, _handle.__name__)
+        except Exception as exc:
+            from pyresilience._exceptions import CircuitOpenError
+
+            if isinstance(exc, CircuitOpenError):
                 await self._send_503(send)
             else:
                 raise
@@ -108,7 +110,7 @@ class ResilientDependency:
 
     async def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute a function with the configured resilience patterns."""
-        return await self._executor.execute(func, *args, **kwargs)
+        return await self._executor.execute(func, func.__name__, *args, **kwargs)
 
     async def __call__(self) -> ResilientDependency:
         """FastAPI dependency protocol — returns self."""

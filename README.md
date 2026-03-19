@@ -167,40 +167,40 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker across Python 3.10
 
 | Pattern | Mean Latency |
 |---------|----------:|
-| Retry (happy path) | 0.56us |
-| Circuit Breaker | 1.25us |
-| Fallback (triggered) | 1.00us |
-| Bulkhead | 1.11us |
-| Rate Limiter | 0.83us |
-| Cache (hit) | 0.91us |
-| **All 7 patterns (cache hit)** | **0.94us** |
+| Retry (happy path) | 0.55us |
+| Circuit Breaker | 0.99us |
+| Fallback (triggered) | 0.67us |
+| Bulkhead | 0.78us |
+| Rate Limiter | 0.84us |
+| Cache (hit) | 0.66us |
+| **All 7 patterns (cache hit)** | **0.66us** |
 
 ### Throughput (10k calls, 10 threads)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **145,942** | **172,508** | **228,151** | **231,333** |
-| tenacity | 44,980 | 73,735 | 80,909 | 77,382 |
+| **pyresilience** | **145,942** | **172,508** | **228,151** | **241,822** |
+| tenacity | 44,980 | 73,735 | 80,909 | 86,976 |
 
-**pyresilience achieves 2.9-3.2x higher throughput under concurrent load.**
+**pyresilience achieves 2.8-3.2x higher throughput under concurrent load.**
 
 ### Async Overhead (50k calls)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.78us** |
-| tenacity | 20.46us | 17.27us | 20.51us | 20.80us |
+| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.72us** |
+| tenacity | 20.46us | 17.27us | 20.51us | 19.85us |
 
-**pyresilience is 24-27x faster than tenacity for async functions.**
+**pyresilience is 24-28x faster than tenacity for async functions.**
 
 ### Memory (1,000 decorated functions)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,052 KB** |
-| tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,254 KB |
+| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,104 KB** |
+| tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,255 KB |
 
-**pyresilience uses ~53% less memory.**
+**pyresilience uses ~51% less memory.**
 
 ## Comparison
 

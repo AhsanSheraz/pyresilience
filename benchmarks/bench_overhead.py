@@ -58,7 +58,7 @@ def with_retry_circuit() -> int:
     timeout=TimeoutConfig(seconds=30),
     circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
     bulkhead=BulkheadConfig(max_concurrent=100),
-    rate_limiter=RateLimiterConfig(max_calls=10000, period=1.0),
+    rate_limiter=RateLimiterConfig(max_calls=1000000, period=1.0),
 )
 def with_all_patterns() -> int:
     return 42

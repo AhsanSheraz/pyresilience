@@ -8,6 +8,7 @@ import pytest
 
 from pyresilience import (
     CircuitBreakerConfig,
+    CircuitOpenError,
     EventType,
     FallbackConfig,
     ResilienceEvent,
@@ -64,7 +65,7 @@ class TestCombinedPatterns:
                 fails()
 
         # Circuit should be open now
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             fails()
 
     def test_all_patterns_success(self) -> None:

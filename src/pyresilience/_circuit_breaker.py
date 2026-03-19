@@ -96,6 +96,10 @@ class CircuitBreaker:
 
     def allow_request(self) -> bool:
         """Check if a request is allowed through the circuit."""
+        # Fast path: CLOSED is the common case — skip lock entirely.
+        # _state is a simple reference assignment (atomic under CPython GIL).
+        if self._state is _CLOSED:
+            return True
         with self._lock:
             self._check_recovery()
             return self._state is not _OPEN

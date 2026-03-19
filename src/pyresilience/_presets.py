@@ -41,7 +41,7 @@ from pyresilience._types import (
 def http_policy(
     *,
     timeout_seconds: float = 10.0,
-    max_retries: int = 3,
+    max_attempts: int = 3,
     retry_delay: float = 0.5,
     circuit_failure_threshold: int = 5,
     circuit_recovery_seconds: float = 30.0,
@@ -63,7 +63,7 @@ def http_policy(
 
     Args:
         timeout_seconds: Max time per request.
-        max_retries: Total attempts (including first).
+        max_attempts: Total attempts (including first).
         retry_delay: Initial retry delay in seconds.
         circuit_failure_threshold: Failures before circuit opens.
         circuit_recovery_seconds: Time before trying again after circuit opens.
@@ -74,7 +74,7 @@ def http_policy(
     """
     policy: dict[str, Any] = {
         "retry": RetryConfig(
-            max_attempts=max_retries,
+            max_attempts=max_attempts,
             delay=retry_delay,
             backoff_factor=2.0,
             max_delay=30.0,
@@ -104,7 +104,7 @@ def http_policy(
 def db_policy(
     *,
     timeout_seconds: float = 30.0,
-    max_retries: int = 2,
+    max_attempts: int = 2,
     retry_delay: float = 1.0,
     circuit_failure_threshold: int = 3,
     circuit_recovery_seconds: float = 60.0,
@@ -124,7 +124,7 @@ def db_policy(
 
     Args:
         timeout_seconds: Max time per query.
-        max_retries: Total attempts (including first).
+        max_attempts: Total attempts (including first).
         retry_delay: Initial retry delay in seconds.
         circuit_failure_threshold: Failures before circuit opens.
         circuit_recovery_seconds: Time before trying again after circuit opens.
@@ -135,7 +135,7 @@ def db_policy(
     """
     policy: dict[str, Any] = {
         "retry": RetryConfig(
-            max_attempts=max_retries,
+            max_attempts=max_attempts,
             delay=retry_delay,
             backoff_factor=1.5,
             max_delay=10.0,
@@ -160,7 +160,7 @@ def db_policy(
 def queue_policy(
     *,
     timeout_seconds: float = 15.0,
-    max_retries: int = 5,
+    max_attempts: int = 5,
     retry_delay: float = 2.0,
     circuit_failure_threshold: int = 10,
     circuit_recovery_seconds: float = 60.0,
@@ -180,7 +180,7 @@ def queue_policy(
 
     Args:
         timeout_seconds: Max time per publish/consume.
-        max_retries: Total attempts (including first).
+        max_attempts: Total attempts (including first).
         retry_delay: Initial retry delay in seconds.
         circuit_failure_threshold: Failures before circuit opens.
         circuit_recovery_seconds: Time before trying again after circuit opens.
@@ -191,7 +191,7 @@ def queue_policy(
     """
     policy: dict[str, Any] = {
         "retry": RetryConfig(
-            max_attempts=max_retries,
+            max_attempts=max_attempts,
             delay=retry_delay,
             backoff_factor=2.0,
             max_delay=60.0,
@@ -217,7 +217,7 @@ def queue_policy(
 def strict_policy(
     *,
     timeout_seconds: float = 5.0,
-    max_retries: int = 1,
+    max_attempts: int = 1,
     circuit_failure_threshold: int = 3,
     circuit_recovery_seconds: float = 60.0,
     listeners: Optional[list[ResilienceListener]] = None,
@@ -234,7 +234,7 @@ def strict_policy(
     """
     policy: dict[str, Any] = {
         "retry": RetryConfig(
-            max_attempts=max_retries,
+            max_attempts=max_attempts,
             delay=0.1,
             backoff_factor=1.0,
             max_delay=0.5,

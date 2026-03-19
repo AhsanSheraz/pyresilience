@@ -105,17 +105,20 @@ class ResilienceRegistry:
             if inspect.iscoroutinefunction(func):
                 executor = self._get_executor(name, is_async=True)
 
+                fn_name = func.__name__
+
                 @functools.wraps(func)
                 async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
-                    return await executor.execute(func, *args, **kwargs)
+                    return await executor.execute(func, fn_name, *args, **kwargs)
 
                 return async_wrapped  # type: ignore[return-value]
             else:
                 executor = self._get_executor(name, is_async=False)
+                fn_name = func.__name__
 
                 @functools.wraps(func)
                 def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
-                    return executor.execute(func, *args, **kwargs)
+                    return executor.execute(func, fn_name, *args, **kwargs)
 
                 return sync_wrapped  # type: ignore[return-value]
 

@@ -88,7 +88,7 @@ class ResilientMiddleware:
 
     def __call__(self, request: Any) -> Any:
         executor = self._get_executor()
-        return executor.execute(self.get_response, request)
+        return executor.execute(self.get_response, self.get_response.__name__, request)
 
 
 def resilient_view(
@@ -116,7 +116,7 @@ def resilient_view(
     def decorator(view_func: F) -> F:
         @functools.wraps(view_func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return executor.execute(view_func, *args, **kwargs)
+            return executor.execute(view_func, view_func.__name__, *args, **kwargs)
 
         return wrapper  # type: ignore[return-value]
 

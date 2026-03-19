@@ -11,15 +11,18 @@ Performance-critical module. Key optimizations:
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import atexit
 import random
 import time
+import weakref
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Callable, Optional, Type
 
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead, BulkheadFullError
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
+from pyresilience._exceptions import CircuitOpenError, ResilienceTimeoutError
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
 from pyresilience._types import (
     CircuitState,
@@ -33,6 +36,24 @@ from pyresilience._types import (
 
 # Shared thread pool for sync timeouts — reused across executors with default pool_size
 _default_timeout_pool = ThreadPoolExecutor(max_workers=4)
+
+# Track custom pools for cleanup at exit
+_custom_pools: list[weakref.ref[ThreadPoolExecutor]] = []
+
+
+def _register_custom_pool(pool: ThreadPoolExecutor) -> None:
+    _custom_pools.append(weakref.ref(pool))
+
+
+def _shutdown_pools() -> None:
+    for ref in _custom_pools:
+        pool = ref()
+        if pool is not None:
+            pool.shutdown(wait=False)
+    _custom_pools.clear()
+
+
+atexit.register(_shutdown_pools)
 
 # Cache random.random locally to avoid attribute lookup in hot path
 _random = random.random
@@ -55,8 +76,10 @@ def _emit(
         detail=detail,
     )
     for listener in listeners:
-        with contextlib.suppress(Exception):
+        try:  # noqa: SIM105 — bare try/except is faster than contextlib.suppress
             listener(event)
+        except Exception:
+            pass
 
 
 def _compute_delay(retry_cfg: RetryConfig, attempt: int) -> float:
@@ -91,6 +114,7 @@ class _SyncExecutor:
         "_circuit_error_types",
         "_fallback_cfg",
         "_fallback_on",
+        "_fast_path",
         "_has_listeners",
         "_has_timeout",
         "_listeners",
@@ -105,8 +129,8 @@ class _SyncExecutor:
     )
 
     def __init__(self, config: ResilienceConfig) -> None:
-        self._listeners = config.listeners
-        self._has_listeners = bool(config.listeners)
+        self._listeners = list(config.listeners)
+        self._has_listeners = bool(self._listeners)
 
         # Pre-cache tuples for isinstance checks (avoids per-call list→tuple conversion)
         self._retry_on: tuple[Type[BaseException], ...] = (
@@ -127,12 +151,16 @@ class _SyncExecutor:
         self._slow_call_duration = (
             config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
         )
+        # Fast path: skip retry loop when no retry, no timeout, no slow call tracking
+        self._fast_path = (
+            config.retry is None and config.timeout is None and self._slow_call_duration == 0.0
+        )
 
         # Share global pool unless custom pool_size is configured
         if config.timeout and config.timeout.pool_size != 4:
-            self._timeout_pool: ThreadPoolExecutor = ThreadPoolExecutor(
-                max_workers=config.timeout.pool_size
-            )
+            pool = ThreadPoolExecutor(max_workers=config.timeout.pool_size)
+            self._timeout_pool: ThreadPoolExecutor = pool
+            _register_custom_pool(pool)
         else:
             self._timeout_pool = _default_timeout_pool
 
@@ -145,15 +173,14 @@ class _SyncExecutor:
         )
         self._cache: Optional[ResultCache] = ResultCache(config.cache) if config.cache else None
 
-    def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        func_name = func.__name__
+    def execute(self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any) -> Any:
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
         cache = self._cache
 
         # Cache check — fast path for repeated calls
-        cache_key: Optional[str] = None
+        cache_key: Any = None
         if cache is not None:
             cache_key = ResultCache.make_key(*args, **kwargs)
             cached = cache.get(cache_key)
@@ -172,8 +199,8 @@ class _SyncExecutor:
             if fallback_cfg is not None:
                 if has_listeners:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, RuntimeError("Circuit breaker is open"))
-            raise RuntimeError("Circuit breaker is open")
+                return _apply_fallback(fallback_cfg, CircuitOpenError("Circuit breaker is open"))
+            raise CircuitOpenError("Circuit breaker is open")
 
         # Rate limiter
         rate_limiter = self._rate_limiter
@@ -198,15 +225,61 @@ class _SyncExecutor:
             raise BulkheadFullError("Bulkhead full")
 
         try:
-            result = self._execute_with_retry(
-                func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
-            )
+            # Fast path: no retry, no timeout — direct call
+            if self._fast_path:
+                result = self._execute_direct(
+                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                )
+            else:
+                result = self._execute_with_retry(
+                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                )
             if cache is not None and cache_key is not None:
                 cache.put(cache_key, result)
             return result
         finally:
             if bulkhead is not None:
                 bulkhead.release()
+
+    def _execute_direct(
+        self,
+        func: Callable[..., Any],
+        func_name: str,
+        listeners: list[ResilienceListener],
+        has_listeners: bool,
+        circuit_breaker: Optional[CircuitBreaker],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Fast path: single execution with no retry loop overhead."""
+        fallback_on = self._fallback_on
+        fallback_cfg = self._fallback_cfg
+        try:
+            result = func(*args, **kwargs)
+            if circuit_breaker is not None:
+                prev_state = circuit_breaker.state
+                new_state = circuit_breaker.record_success(0.0)
+                if (
+                    new_state == CircuitState.CLOSED
+                    and prev_state != CircuitState.CLOSED
+                    and has_listeners
+                ):
+                    _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+            if has_listeners:
+                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+            return result
+        except Exception as exc:
+            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+                new_state = circuit_breaker.record_failure(0.0)
+                if new_state == CircuitState.OPEN and has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
+            if fallback_cfg is not None and isinstance(exc, fallback_on):
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                return _apply_fallback(fallback_cfg, exc)
+            if has_listeners:
+                _emit(listeners, EventType.FAILURE, func_name, error=exc)
+            raise
 
     def _execute_with_retry(
         self,
@@ -356,13 +429,11 @@ class _SyncExecutor:
         *args: Any,
         **kwargs: Any,
     ) -> Any:
-        import concurrent.futures
-
         timeout_seconds = self._timeout_seconds
         future = self._timeout_pool.submit(func, *args, **kwargs)
         try:
             return future.result(timeout=timeout_seconds)
-        except (TimeoutError, concurrent.futures.TimeoutError):
+        except (TimeoutError, FuturesTimeoutError):
             future.cancel()
             if self._has_listeners:
                 _emit(
@@ -371,7 +442,9 @@ class _SyncExecutor:
                     func_name,
                     detail=f"exceeded {timeout_seconds}s",
                 )
-            raise TimeoutError(f"{func_name} exceeded timeout of {timeout_seconds}s") from None
+            raise ResilienceTimeoutError(
+                f"{func_name} exceeded timeout of {timeout_seconds}s",
+            ) from None
 
 
 class _AsyncExecutor:
@@ -388,6 +461,7 @@ class _AsyncExecutor:
         "_circuit_error_types",
         "_fallback_cfg",
         "_fallback_on",
+        "_fast_path",
         "_has_listeners",
         "_has_timeout",
         "_listeners",
@@ -401,8 +475,8 @@ class _AsyncExecutor:
     )
 
     def __init__(self, config: ResilienceConfig) -> None:
-        self._listeners = config.listeners
-        self._has_listeners = bool(config.listeners)
+        self._listeners = list(config.listeners)
+        self._has_listeners = bool(self._listeners)
 
         # Pre-cache tuples for isinstance checks
         self._retry_on: tuple[Type[BaseException], ...] = (
@@ -423,6 +497,9 @@ class _AsyncExecutor:
         self._slow_call_duration = (
             config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
         )
+        self._fast_path = (
+            config.retry is None and config.timeout is None and self._slow_call_duration == 0.0
+        )
 
         self._circuit_breaker: Optional[CircuitBreaker] = (
             CircuitBreaker(config.circuit_breaker) if config.circuit_breaker else None
@@ -437,15 +514,16 @@ class _AsyncExecutor:
             AsyncResultCache(config.cache) if config.cache else None
         )
 
-    async def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        func_name = func.__name__
+    async def execute(
+        self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
+    ) -> Any:
         listeners = self._listeners
         has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
         cache = self._cache
 
         # Cache check
-        cache_key: Optional[str] = None
+        cache_key: Any = None
         if cache is not None:
             cache_key = AsyncResultCache.make_key(*args, **kwargs)
             cached = cache.get(cache_key)
@@ -464,8 +542,8 @@ class _AsyncExecutor:
             if fallback_cfg is not None:
                 if has_listeners:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(fallback_cfg, RuntimeError("Circuit breaker is open"))
-            raise RuntimeError("Circuit breaker is open")
+                return _apply_fallback(fallback_cfg, CircuitOpenError("Circuit breaker is open"))
+            raise CircuitOpenError("Circuit breaker is open")
 
         # Rate limiter
         rate_limiter = self._rate_limiter
@@ -490,15 +568,60 @@ class _AsyncExecutor:
             raise BulkheadFullError("Bulkhead full")
 
         try:
-            result = await self._execute_with_retry(
-                func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
-            )
+            if self._fast_path:
+                result = await self._execute_direct(
+                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                )
+            else:
+                result = await self._execute_with_retry(
+                    func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+                )
             if cache is not None and cache_key is not None:
                 cache.put(cache_key, result)
             return result
         finally:
             if bulkhead is not None:
                 bulkhead.release()
+
+    async def _execute_direct(
+        self,
+        func: Callable[..., Any],
+        func_name: str,
+        listeners: list[ResilienceListener],
+        has_listeners: bool,
+        circuit_breaker: Optional[CircuitBreaker],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Fast path: single async execution with no retry loop overhead."""
+        fallback_on = self._fallback_on
+        fallback_cfg = self._fallback_cfg
+        try:
+            result = await func(*args, **kwargs)
+            if circuit_breaker is not None:
+                prev_state = circuit_breaker.state
+                new_state = circuit_breaker.record_success(0.0)
+                if (
+                    new_state == CircuitState.CLOSED
+                    and prev_state != CircuitState.CLOSED
+                    and has_listeners
+                ):
+                    _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+            if has_listeners:
+                _emit(listeners, EventType.SUCCESS, func_name, attempt=1)
+            return result
+        except Exception as exc:
+            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+                new_state = circuit_breaker.record_failure(0.0)
+                if new_state == CircuitState.OPEN and has_listeners:
+                    _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
+            if fallback_cfg is not None and isinstance(exc, fallback_on):
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                return _apply_fallback(fallback_cfg, exc)
+            if has_listeners:
+                _emit(listeners, EventType.FAILURE, func_name, error=exc)
+            raise
 
     async def _execute_with_retry(
         self,
@@ -542,7 +665,7 @@ class _AsyncExecutor:
                                 func_name,
                                 detail=f"exceeded {timeout_seconds}s",
                             )
-                        raise TimeoutError(
+                        raise ResilienceTimeoutError(
                             f"{func_name} exceeded timeout of {timeout_seconds}s"
                         ) from None
                 else:

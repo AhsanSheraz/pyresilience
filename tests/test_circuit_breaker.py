@@ -8,6 +8,7 @@ import pytest
 
 from pyresilience import (
     CircuitBreakerConfig,
+    CircuitOpenError,
     CircuitState,
     EventType,
     FallbackConfig,
@@ -89,7 +90,7 @@ class TestCircuitBreakerDecorator:
                 fails()
 
         # Circuit is now open — should get RuntimeError
-        with pytest.raises(RuntimeError, match="Circuit breaker is open"):
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
             fails()
         assert call_count == 2  # Not called a third time
 
