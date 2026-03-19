@@ -139,6 +139,18 @@ The fallback is checked when:
 - All **retries** are exhausted
 - A non-retryable exception occurs
 
+### Default Constructor
+
+`FallbackConfig()` works without arguments. When `handler=None`, `fallback_on` is auto-cleared to `()`, so no exceptions are silently swallowed:
+
+```python
+# Safe — no fallback is actually triggered (fallback_on is empty)
+@resilient(fallback=FallbackConfig())
+def my_func(): ...
+```
+
+### Sync Fallback
+
 ```python
 from pyresilience import (
     FallbackConfig,
@@ -157,6 +169,29 @@ from pyresilience import (
 )
 def resilient_call() -> dict:
     return requests.get("https://api.example.com").json()
+```
+
+### Async Fallback Handlers
+
+The fallback handler can be an async function when used with async decorated functions. pyresilience detects this via `asyncio.iscoroutinefunction` and awaits it automatically:
+
+```python
+async def fetch_from_backup(exc: Exception) -> dict:
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://backup-api.example.com/data") as resp:
+            return await resp.json()
+
+@resilient(
+    retry=RetryConfig(max_attempts=3),
+    fallback=FallbackConfig(
+        handler=fetch_from_backup,
+        fallback_on=(Exception,),
+    ),
+)
+async def fetch_data() -> dict:
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://primary-api.example.com/data") as resp:
+            return await resp.json()
 ```
 
 ## Pattern Interactions

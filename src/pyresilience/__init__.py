@@ -4,12 +4,12 @@ One decorator to combine retry, timeout, circuit breaker, fallback, and bulkhead
 Defines the full safety policy for a dependency, not just retries.
 """
 
-from pyresilience._bulkhead import BulkheadFullError
 from pyresilience._cache import AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
 from pyresilience._compat import has_orjson, has_uvloop, install_uvloop
 from pyresilience._decorator import resilient
 from pyresilience._exceptions import (
+    BulkheadFullError,
     CircuitOpenError,
     ResilienceError,
     ResilienceTimeoutError,

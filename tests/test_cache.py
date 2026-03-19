@@ -205,3 +205,96 @@ class TestCacheIntegration:
         time.sleep(0.1)
         my_func()  # expired, re-executes
         assert call_count == 2
+
+
+class TestCacheConfigValidation:
+    def test_max_size_must_be_positive(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="max_size must be >= 1"):
+            CacheConfig(max_size=0)
+
+    def test_max_size_negative_raises(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="max_size must be >= 1"):
+            CacheConfig(max_size=-1)
+
+    def test_ttl_negative_raises(self) -> None:
+        import pytest
+
+        with pytest.raises(ValueError, match="ttl must be >= 0"):
+            CacheConfig(ttl=-1)
+
+    def test_ttl_zero_is_valid(self) -> None:
+        cfg = CacheConfig(ttl=0)
+        assert cfg.ttl == 0
+
+
+class TestCacheStampedePrevention:
+    def test_sync_stampede_prevention(self) -> None:
+        """Only one thread computes on cache miss; others get the cached result."""
+        import threading
+
+        from pyresilience import CacheConfig, resilient
+
+        call_count = 0
+        started = threading.Event()
+
+        @resilient(cache=CacheConfig(max_size=10, ttl=60.0))
+        def expensive(x: int) -> int:
+            nonlocal call_count
+            call_count += 1
+            started.set()
+            time.sleep(0.1)  # Simulate slow computation
+            return x * 2
+
+        results: list[int] = []
+        errors: list[Exception] = []
+
+        def run() -> None:
+            try:
+                results.append(expensive(5))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=run) for _ in range(3)]
+        for t in threads:
+            t.start()
+        # Wait for the first thread to start computing
+        started.wait(timeout=2.0)
+        for t in threads:
+            t.join(timeout=5.0)
+
+        assert not errors
+        assert all(r == 10 for r in results)
+        # Only 1 thread should have actually computed
+        assert call_count == 1
+
+    def test_cache_key_lock_cleanup_on_clear(self) -> None:
+        """clear() also clears the per-key lock dict."""
+        config = CacheConfig(max_size=10, ttl=60.0)
+        cache = ResultCache(config)
+        lock = cache.get_key_lock("test_key")
+        assert lock is not None
+        cache.clear()
+        # After clear, a new lock should be created
+        lock2 = cache.get_key_lock("test_key")
+        assert lock2 is not lock
+
+
+class TestCacheKeyUnhashable:
+    def test_unhashable_args_fallback_to_string_key(self) -> None:
+        """Unhashable args use string-based key."""
+        from pyresilience._cache import _make_cache_key
+
+        key = _make_cache_key([1, 2, 3])
+        assert isinstance(key, str)
+        assert "list" in key
+
+    def test_kwargs_uses_string_key(self) -> None:
+        """make_key with kwargs."""
+        from pyresilience._cache import _make_cache_key
+
+        key = _make_cache_key(1, name="test")
+        assert isinstance(key, str)

@@ -160,6 +160,12 @@ class FallbackConfig:
     handler: Union[Callable[..., Any], Any] = None
     fallback_on: Sequence[Type[BaseException]] = (Exception,)
 
+    def __post_init__(self) -> None:
+        if self.handler is None:
+            # When no handler is set, disable fallback triggers to prevent
+            # silently returning None on exceptions
+            self.fallback_on = ()
+
 
 @dataclass
 class BulkheadConfig:
@@ -210,6 +216,12 @@ class CacheConfig:
 
     max_size: int = 256
     ttl: float = 300.0
+
+    def __post_init__(self) -> None:
+        if self.max_size < 1:
+            raise ValueError("max_size must be >= 1")
+        if self.ttl < 0:
+            raise ValueError("ttl must be >= 0")
 
 
 @dataclass

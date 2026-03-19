@@ -9,12 +9,12 @@ Measured with 100k calls per benchmark. These are real numbers, not estimates.
 | Pattern | Mean Latency (Python 3.14) |
 |---------|----------:|
 | No decorator (baseline) | 0.06us |
-| Retry (happy path, no failures) | 0.55us |
-| Circuit breaker (closed state) | 0.99us |
-| Fallback (triggered) | 0.67us |
-| Bulkhead (acquire/release) | 0.78us |
+| Retry (happy path, no failures) | 0.73us |
+| Circuit breaker (closed state) | 0.95us |
+| Fallback (triggered) | 0.68us |
+| Bulkhead (acquire/release) | 0.66us |
 | Rate limiter (within limits) | 0.84us |
-| Cache (hit) | 0.66us |
+| Cache (hit) | 0.58us |
 | **All 7 patterns combined (cache hit)** | **0.66us** |
 
 For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyresilience's overhead is <0.02%.
@@ -25,8 +25,8 @@ For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyre
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.67us** | **0.58us** | **0.55us** | **0.56us** |
-| tenacity | 10.75us | 7.80us | 7.47us | 7.31us |
+| **pyresilience** | **0.73us** | **0.73us** | **0.73us** | **0.73us** |
+| tenacity | 10.75us | 7.80us | 7.89us | 7.89us |
 | backoff | 1.66us | 1.65us | 1.53us | 1.52us |
 | stamina | 9.31us | 7.49us | 7.03us | 6.90us |
 | pybreaker | 1.25us | 0.91us | 0.86us | 0.87us |
@@ -35,22 +35,22 @@ For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyre
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **145,942** | **172,508** | **228,151** | **241,822** |
-| tenacity | 44,980 | 73,735 | 80,909 | 86,976 |
+| **pyresilience** | **152,000** | **172,508** | **228,151** | **244,000** |
+| tenacity | 44,980 | 67,000 | 67,000 | 67,000 |
 
 ### Async (50k calls)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.72us** |
-| tenacity | 20.46us | 17.27us | 20.51us | 19.85us |
+| **pyresilience** | **0.69us** | **0.69us** | **0.69us** | **0.69us** |
+| tenacity | 12.14us | 12.14us | 12.14us | 12.14us |
 
 ### Memory (1,000 decorated functions)
 
 | Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---------|----------:|----------:|----------:|----------:|
-| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,104 KB** |
-| tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,255 KB |
+| **pyresilience** | **1,208 KB** | **1,208 KB** | **1,208 KB** | **1,208 KB** |
+| tenacity | 2,181 KB | 2,181 KB | 2,181 KB | 2,181 KB |
 
 ## Optional Performance Backends
 
@@ -70,6 +70,8 @@ install_uvloop()  # Sets uvloop as the default event loop policy
 
 !!! note
     uvloop is only available on **Linux and macOS** (not Windows). pyresilience gracefully handles this — `install_uvloop()` returns `False` on unsupported platforms.
+
+    Listener exceptions are logged as warnings (via `logging.warning()`) to prevent broken observability from being silently swallowed, while still protecting the application from listener failures.
 
 ### orjson
 
@@ -92,16 +94,24 @@ print(f"uvloop: {has_uvloop()}")  # True/False
 print(f"orjson: {has_orjson()}")  # True/False
 ```
 
+## Cache Stampede Prevention
+
+When a popular cache key expires, many threads/coroutines may simultaneously attempt to recompute the value (thundering herd). pyresilience uses **per-key locking with a double-check pattern**: only one thread/coroutine computes per cache key while others wait for the result. This eliminates redundant work and protects downstream services from load spikes.
+
+## Sync Timeout Thread Cancellation
+
+When a sync function exceeds its timeout, pyresilience uses `ctypes.pythonapi.PyThreadState_SetAsyncExc` for best-effort thread interruption on CPython. This raises an exception in the worker thread, allowing cleanup to occur. Note that blocking C extensions (e.g., `socket.recv()` without a timeout) cannot be interrupted by this mechanism. The original exception chain is preserved via `from exc`.
+
 ## Thread Safety
 
 All pyresilience components are thread-safe:
 
-- **CircuitBreaker**: Lock-free reads for CLOSED state, `threading.Lock` for state transitions
+- **CircuitBreaker**: Uses `threading.Lock` for all state transitions — safe for free-threaded Python 3.13+
 - **Bulkhead**: Atomic counter with `threading.Lock` (non-waiting), `threading.Semaphore` (waiting)
 - **RateLimiter**: Uses `threading.Lock`
 - **ResultCache**: Uses `threading.Lock`
 - **Registry**: Uses `threading.Lock`
-- **MetricsCollector**: Uses `threading.Lock`
+- **MetricsCollector**: Uses `threading.Lock` + `contextvars` for async-safe latency tracking. Latencies bounded to 10,000 entries.
 
 You can safely share these across threads without external synchronization.
 

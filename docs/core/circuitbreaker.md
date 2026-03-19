@@ -17,7 +17,7 @@ CLOSED ──(failures >= threshold)──> OPEN
 | State | Behavior |
 |-------|----------|
 | **CLOSED** | Normal operation. Calls pass through. Failures are counted. |
-| **OPEN** | All calls are immediately rejected with `RuntimeError`. No calls reach the protected function. |
+| **OPEN** | All calls are immediately rejected with `CircuitOpenError`. No calls reach the protected function. |
 | **HALF_OPEN** | A limited number of calls are allowed through to test if the service has recovered. |
 
 ### State Transitions
@@ -177,6 +177,33 @@ def on_event(event):
 def critical_service():
     ...
 ```
+
+## Manual Control
+
+For operational needs (maintenance windows, graceful degradation, testing), you can manually control circuit breaker state:
+
+```python
+from pyresilience import CircuitBreaker, CircuitBreakerConfig
+
+cb = CircuitBreaker(CircuitBreakerConfig(failure_threshold=5))
+
+# Force the circuit open (reject all calls)
+cb.force_open()
+
+# Force the circuit closed (allow all calls, reset counters)
+cb.force_close()
+
+# Reset to initial state (CLOSED with zeroed counters)
+cb.reset()
+```
+
+| Method | Effect |
+|--------|--------|
+| `reset()` | Returns to CLOSED state, resets all failure/success counters |
+| `force_open()` | Immediately transitions to OPEN, rejecting all calls |
+| `force_close()` | Immediately transitions to CLOSED, resetting counters |
+
+These methods are thread-safe and can be called from any thread.
 
 ## Direct Usage
 

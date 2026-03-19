@@ -79,7 +79,19 @@ class ResilientMiddleware:
                 failure_threshold=user_config["circuit_failure_threshold"],
                 recovery_timeout=user_config.get("circuit_recovery_seconds", 30.0),
             )
-        if "max_retries" in user_config:
+        if "max_attempts" in user_config:
+            config.retry = RetryConfig(
+                max_attempts=user_config["max_attempts"],
+                delay=user_config.get("retry_delay", 1.0),
+            )
+        elif "max_retries" in user_config:
+            import warnings
+
+            warnings.warn(
+                "PYRESILIENCE_CONFIG key 'max_retries' is deprecated, use 'max_attempts' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             config.retry = RetryConfig(
                 max_attempts=user_config["max_retries"],
                 delay=user_config.get("retry_delay", 1.0),

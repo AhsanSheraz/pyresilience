@@ -101,7 +101,7 @@ def cache_lookup(key: str) -> dict:
 | Parameter | Default | Why |
 |-----------|---------|-----|
 | Timeout | 5s | Fail fast |
-| Max retries | 1 | Only 1 retry (2 total attempts) |
+| Max attempts | 1 | No retries (1 total attempt) |
 | Retry delay | 0.1s | Minimal delay |
 | Backoff factor | 1.0 | No backoff |
 | Max delay | 0.5s | Cap very low |

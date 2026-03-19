@@ -159,3 +159,44 @@ class TestRateLimiterIntegration:
 
         event_types = [e.event_type for e in events]
         assert EventType.RATE_LIMITED in event_types
+
+
+class TestSyncRateLimiterWithListenersAndFallback:
+    def test_rate_limited_with_listeners_and_fallback(self) -> None:
+        """Rate limiter + listeners + fallback."""
+        from pyresilience import (
+            EventType,
+            FallbackConfig,
+            RateLimiterConfig,
+            ResilienceEvent,
+            resilient,
+        )
+
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            rate_limiter=RateLimiterConfig(max_calls=1, period=60.0),
+            fallback=FallbackConfig(handler="rate_limited_val"),
+            listeners=[events.append],
+        )
+        def limited() -> str:
+            return "ok"
+
+        r1 = limited()
+        assert r1 == "ok"
+
+        r2 = limited()
+        assert r2 == "rate_limited_val"
+        event_types = [e.event_type for e in events]
+        assert EventType.RATE_LIMITED in event_types
+        assert EventType.FALLBACK_USED in event_types
+
+
+class TestRateLimiterConfigValidation:
+    def test_max_calls_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="max_calls must be >= 1"):
+            RateLimiterConfig(max_calls=0)
+
+    def test_period_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="period must be > 0"):
+            RateLimiterConfig(period=0)

@@ -35,7 +35,7 @@ def install_uvloop() -> bool:
     try:
         import asyncio
 
-        import uvloop  # type: ignore[import-not-found,unused-ignore]
+        import uvloop
 
         if not isinstance(asyncio.get_event_loop_policy(), uvloop.EventLoopPolicy):
             uvloop.install()
@@ -50,7 +50,7 @@ def get_json_dumps() -> Any:
     Returns orjson.dumps if available, falls back to json.dumps.
     """
     if has_orjson():
-        import orjson  # type: ignore[import-not-found]
+        import orjson
 
         return orjson.dumps
     import json

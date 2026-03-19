@@ -228,7 +228,7 @@ def strict_policy(
 
     Defaults:
     - 5s timeout
-    - 1 retry only (2 total attempts)
+    - No retries (1 total attempt) by default
     - Circuit breaker: opens after 3 failures, 60s recovery
     - No jitter (fail fast)
     """

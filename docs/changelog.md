@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.3.0 (2026-03-19)
+
+### New Features
+- **Circuit breaker manual control**: Added `reset()`, `force_open()`, `force_close()` methods to `CircuitBreaker` for operational needs (maintenance windows, graceful degradation)
+- **Async fallback handlers**: `FallbackConfig.handler` can now be an async function when used with async decorated functions. Detected via `asyncio.iscoroutinefunction`
+- **Cache stampede prevention**: Per-key locking with double-check pattern prevents thundering herd on cache miss. Only one thread/coroutine computes per cache key; others wait for the result
+- **Sync timeout thread cancellation**: Uses `ctypes.pythonapi.PyThreadState_SetAsyncExc` for best-effort thread interruption on CPython. Exception chain preserved (`from exc`). Will not interrupt blocking C extensions
+- **AsyncBulkhead loop safety**: Detects event loop changes and recreates semaphore automatically. Safe across multiple `asyncio.run()` calls
+
+### Bug Fixes
+- **FallbackConfig default constructor**: `FallbackConfig()` now works without arguments. When `handler=None`, `fallback_on` is auto-cleared to `()` to prevent silently returning `None` on exceptions
+- **Circuit breaker race condition**: Removed lock-free fast path in `allow_request()` — always acquires lock. Safe for free-threaded Python 3.13+ (`--disable-gil`)
+- **Circuit breaker re-checked between retries**: CB state is verified before each retry attempt. If the CB opened (from other threads), retries stop immediately with `CircuitOpenError`
+- **MetricsCollector async collision**: Replaced `threading.get_ident()` with `contextvars.ContextVar` — concurrent async coroutines no longer corrupt latency tracking
+- **Jitter zero-delay floor**: Jitter now has a 10% minimum floor (`max(base * 0.1, random() * delay)`), preventing zero-delay retry storms
+- **Timeout exception chaining**: `ResilienceTimeoutError` now chains via `from exc` instead of `from None`, preserving original traceback for debugging
+- **`strict_policy` docstring**: Corrected from "1 retry (2 total attempts)" to "No retries (1 total attempt)"
+- **Django `max_retries` → `max_attempts`**: Config key renamed for consistency with `RetryConfig`. Old key still works with `DeprecationWarning`
+- **mypy clean**: Fixed uvloop/orjson import errors via `pyproject.toml` overrides. mypy now passes with zero errors
+
+### Improvements
+- **Bulkhead released during retry sleep**: Bulkhead slot is now released during retry backoff and reacquired before the next attempt, preventing slot starvation
+- **Cooperative timeout cancel**: Sync timeout uses `threading.Event` for cancel signaling instead of no-op `future.cancel()`
+- **Listener errors logged**: Broken listeners now emit `logging.warning()` instead of being silently swallowed
+- **Bounded MetricsCollector memory**: Latency history bounded to 10,000 entries via `collections.deque(maxlen=10000)`
+- **Larger default thread pool**: Sync timeout pool increased from 4 to `min(32, cpu_count + 4)` workers
+- **Decorator introspection**: Wrapped functions now expose `_executor` attribute for runtime access to circuit breaker, cache, etc.
+- **Config validation**: `FallbackConfig` and `CacheConfig` now validate inputs in `__post_init__`
+- **`BulkheadFullError` import cleanup**: Now imported directly from `_exceptions` module
+
+### Performance
+- Decorator overhead: 0.73us (tenacity 7.89us = 10.8x faster)
+- Throughput: 152K-244K ops/sec (tenacity 67K = 2.3-3.6x faster)
+- Async: 0.69us (tenacity 12.14us = 17.6x faster)
+- Memory: 1,208KB per 1,000 decorated functions (tenacity 2,181KB = 45% less)
+- Circuit breaker: 0.95us (pybreaker 0.64us — trade-off for full thread safety)
+- Cache hot path: 0.58us
+- Fallback: 0.68us
+- Bulkhead: 0.66us
+
+### Tests
+- 276 tests (up from 232), 98% branch coverage
+- Removed `test_coverage.py` — all tests distributed to relevant feature test files
+- Added config validation tests for all dataclasses
+
+---
+
 ## v0.2.0 (2026-03-19)
 
 ### New Features

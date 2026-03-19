@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextvars
 import importlib.util
+import itertools
 import json as _stdlib_json
 import logging
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
@@ -17,6 +19,12 @@ logger = logging.getLogger("pyresilience")
 
 _monotonic = time.monotonic
 
+# Unique call ID for latency tracking — works for both sync and async
+_call_id_counter = itertools.count()
+call_id_var: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "pyresilience_call_id", default=-1
+)
+
 # Terminal event types that end a call's latency tracking
 _TERMINAL_EVENTS = frozenset(("success", "failure"))
 
@@ -24,10 +32,11 @@ _TERMINAL_EVENTS = frozenset(("success", "failure"))
 def _make_dumps() -> Callable[[Any], str]:
     """Create a JSON serializer, using orjson if available."""
     if importlib.util.find_spec("orjson") is not None:
-        import orjson  # type: ignore[import-not-found]
+        import orjson
 
         def _orjson_dumps(obj: Any) -> str:
-            return str(orjson.dumps(obj).decode("utf-8"))
+            result: str = orjson.dumps(obj).decode("utf-8")
+            return result
 
         return _orjson_dumps
     return lambda obj: _stdlib_json.dumps(obj, default=str)
@@ -114,21 +123,23 @@ class MetricsCollector:
         self._lock = threading.Lock()
         self._counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._call_starts: dict[int, float] = {}
-        self._latencies: dict[str, list[float]] = defaultdict(list)
+        self._latencies: dict[str, deque[float]] = defaultdict(lambda: deque(maxlen=10000))
 
     def __call__(self, event: ResilienceEvent) -> None:
         func = event.function_name
         evt = event.event_type.value
-        call_key = threading.get_ident()
+        call_key = call_id_var.get()
 
         with self._lock:
             self._counts[func][evt] += 1
 
             # Track latency from first attempt to terminal event
-            if event.attempt == 1 and evt not in _TERMINAL_EVENTS:
-                self._call_starts[call_key] = _monotonic()
-            elif evt in _TERMINAL_EVENTS and call_key in self._call_starts:
-                self._latencies[func].append(_monotonic() - self._call_starts.pop(call_key))
+            # Skip latency tracking if call_id was not set by the executor
+            if call_key != -1:
+                if event.attempt == 1 and evt not in _TERMINAL_EVENTS:
+                    self._call_starts[call_key] = _monotonic()
+                elif evt in _TERMINAL_EVENTS and call_key in self._call_starts:
+                    self._latencies[func].append(_monotonic() - self._call_starts.pop(call_key))
 
     def get_counts(self, function_name: Optional[str] = None) -> dict[str, dict[str, int]]:
         """Get event counts, optionally filtered by function name."""
@@ -141,7 +152,8 @@ class MetricsCollector:
         """Get call latencies, optionally filtered by function name."""
         with self._lock:
             if function_name:
-                return {function_name: list(self._latencies.get(function_name, []))}
+                raw = self._latencies.get(function_name)
+                return {function_name: list(raw) if raw else []}
             return {k: list(v) for k, v in self._latencies.items()}
 
     def summary(self) -> dict[str, Any]:
@@ -152,7 +164,7 @@ class MetricsCollector:
                 successes = counts.get("success", 0)
                 failures = counts.get("failure", 0)
                 total = successes + failures
-                latencies = self._latencies.get(func, [])
+                latencies: deque[float] = self._latencies.get(func, deque())
                 entry: dict[str, Any] = {
                     "events": dict(counts),
                     "total_calls": total,

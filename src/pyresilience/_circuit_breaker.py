@@ -96,13 +96,43 @@ class CircuitBreaker:
 
     def allow_request(self) -> bool:
         """Check if a request is allowed through the circuit."""
-        # Fast path: CLOSED is the common case — skip lock entirely.
-        # _state is a simple reference assignment (atomic under CPython GIL).
-        if self._state is _CLOSED:
-            return True
         with self._lock:
             self._check_recovery()
             return self._state is not _OPEN
+
+    def record_success_atomic(self, duration: float = 0.0) -> tuple[CircuitState, CircuitState]:
+        """Record a successful call and return (previous_state, new_state) atomically.
+
+        This avoids the race condition where ``.state`` and ``.record_success()`` are
+        called separately with two lock acquisitions, potentially allowing another
+        thread to change state between the two calls.
+
+        Args:
+            duration: Call duration in seconds (for slow call detection).
+
+        Returns:
+            Tuple of (state_before_recording, state_after_recording).
+        """
+        with self._lock:
+            self._check_recovery()
+            prev_state = self._state
+            if self._state is _HALF_OPEN:
+                self._success_count += 1
+                if self._success_count >= self._success_threshold:
+                    self._state = _CLOSED
+                    self._failure_count = 0
+                    self._success_count = 0
+                    if self._window is not None:
+                        self._window.clear()
+                return prev_state, self._state
+
+            if self._window is not None:
+                is_slow = self._slow_call_duration > 0 and duration >= self._slow_call_duration
+                self._window.append((False, is_slow))
+                self._maybe_open_from_window()
+            else:
+                self._failure_count = 0
+            return prev_state, self._state
 
     def record_success(self, duration: float = 0.0) -> CircuitState:
         """Record a successful call. Returns the new state.
@@ -185,6 +215,31 @@ class CircuitBreaker:
             if slow_rate >= self._slow_call_rate_threshold:
                 self._state = _OPEN
                 self._last_failure_time = _monotonic()
+
+    def reset(self) -> None:
+        """Reset circuit breaker to CLOSED state, clearing all counters."""
+        with self._lock:
+            self._state = _CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            self._last_failure_time = None
+            if self._window is not None:
+                self._window.clear()
+
+    def force_open(self) -> None:
+        """Force circuit to OPEN state."""
+        with self._lock:
+            self._state = _OPEN
+            self._last_failure_time = _monotonic()
+
+    def force_close(self) -> None:
+        """Force circuit to CLOSED state, clearing all counters."""
+        with self._lock:
+            self._state = _CLOSED
+            self._failure_count = 0
+            self._success_count = 0
+            if self._window is not None:
+                self._window.clear()
 
     @property
     def metrics(self) -> dict[str, Any]:
