@@ -65,6 +65,17 @@ jobs:
       - run: uv pip install --system -e ".[dev]"
       - run: mypy src/pyresilience
 
+  ci-pass:
+    if: always()
+    needs: [test, coverage, lint, type-check]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ needs.test.result }}" != "success" || "${{ needs.coverage.result }}" != "success" || "${{ needs.lint.result }}" != "success" || "${{ needs.type-check.result }}" != "success" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, coverage, lint, type-check]
