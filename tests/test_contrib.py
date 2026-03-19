@@ -146,15 +146,11 @@ class TestDjangoIntegration:
     def test_middleware_load_config_with_settings(self) -> None:
         from unittest import mock
 
-        mock_load = mock.patch(
-            "pyresilience.contrib.django.ResilientMiddleware._load_config"
-        )
+        mock_load = mock.patch("pyresilience.contrib.django.ResilientMiddleware._load_config")
         with mock_load as patched:
             patched.return_value = ResilienceConfig(
                 timeout=TimeoutConfig(seconds=15),
-                circuit_breaker=CircuitBreakerConfig(
-                    failure_threshold=3, recovery_timeout=45
-                ),
+                circuit_breaker=CircuitBreakerConfig(failure_threshold=3, recovery_timeout=45),
                 retry=RetryConfig(max_attempts=2, delay=0.5),
             )
             config = patched()
@@ -197,10 +193,14 @@ class TestFlaskIntegration:
     def test_resilience_extension_call(self) -> None:
         from pyresilience.contrib.flask import Resilience
 
-        mock_app = type("App", (), {
-            "before_request": lambda self, f: None,
-            "extensions": {},
-        })()
+        mock_app = type(
+            "App",
+            (),
+            {
+                "before_request": lambda self, f: None,
+                "extensions": {},
+            },
+        )()
 
         ext = Resilience(mock_app, config=ResilienceConfig())
         result = ext.call(lambda: "hello")
@@ -209,10 +209,14 @@ class TestFlaskIntegration:
     def test_resilience_extension_init_app(self) -> None:
         from pyresilience.contrib.flask import Resilience
 
-        mock_app = type("App", (), {
-            "before_request": lambda self, f: None,
-            "extensions": {},
-        })()
+        mock_app = type(
+            "App",
+            (),
+            {
+                "before_request": lambda self, f: None,
+                "extensions": {},
+            },
+        )()
 
         ext = Resilience()
         ext.init_app(mock_app, config=ResilienceConfig(timeout=TimeoutConfig(seconds=10)))
@@ -222,10 +226,14 @@ class TestFlaskIntegration:
     def test_resilience_extension_default_config(self) -> None:
         from pyresilience.contrib.flask import Resilience
 
-        mock_app = type("App", (), {
-            "before_request": lambda self, f: None,
-            "extensions": {},
-        })()
+        mock_app = type(
+            "App",
+            (),
+            {
+                "before_request": lambda self, f: None,
+                "extensions": {},
+            },
+        )()
 
         ext = Resilience()
         ext.init_app(mock_app)  # No config — should use default
