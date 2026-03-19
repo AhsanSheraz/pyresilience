@@ -47,7 +47,7 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 - **Patterns that work together** — Circuit breaker state is shared across retries. Rate limiting respects bulkhead limits. Cache short-circuits the entire pipeline. Everything is coordinated.
 - **Zero dependencies** — Pure Python stdlib. Nothing to conflict with your stack.
 - **Sync and async** — Same API for both. Auto-detects your function type.
-- **Production observability** — Built-in event listeners for logging, metrics, and alerting. Know when circuits open, retries fire, or rate limits hit.
+- **Production observability** — Built-in event listeners for logging, metrics, and alerting. OpenTelemetry and Prometheus listeners included. Know when circuits open, retries fire, or rate limits hit.
 - **Thread-safe and async-safe** — All stateful components use locks. Async-safe latency tracking via `contextvars`. Cache stampede prevention via per-key locking.
 - **Framework integrations** — Drop-in support for [FastAPI](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), [Django](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/), and [Flask](https://pyresilience.readthedocs.io/en/latest/advanced/frameworks/).
 
@@ -136,6 +136,81 @@ print(metrics.summary())
 # {"my_func": {"events": {"retry": 2, "success": 1}, "success_rate": 1.0, "avg_latency_ms": 15.2}}
 ```
 
+### Request Correlation
+
+```python
+from pyresilience import resilience_context
+
+# Set trace/request ID for the current context — propagates through all resilience events
+resilience_context.set({"trace_id": "abc-123", "request_id": "req-456"})
+```
+
+### OpenTelemetry & Prometheus
+
+```python
+from pyresilience.contrib.otel import OpenTelemetryListener
+from pyresilience.contrib.prometheus import PrometheusListener
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[OpenTelemetryListener()])
+def call_api(): ...
+
+@resilient(retry=RetryConfig(max_attempts=3), listeners=[PrometheusListener()])
+def call_db(): ...
+```
+
+## Production Features
+
+### Retry Budget
+
+Prevent retry storms across your service with a shared token bucket:
+
+```python
+from pyresilience import resilient, RetryConfig, RetryBudgetConfig, RetryBudget
+
+budget = RetryBudget(RetryBudgetConfig(max_retries=100, refill_rate=10))
+
+@resilient(retry=RetryConfig(max_attempts=3, retry_budget=budget))
+def call_api(): ...
+```
+
+### Per-Attempt Timeout
+
+Apply timeout per attempt instead of a total deadline:
+
+```python
+from pyresilience import resilient, TimeoutConfig
+
+@resilient(timeout=TimeoutConfig(seconds=5, per_attempt=True))   # 5s per attempt
+def call_api(): ...
+
+@resilient(timeout=TimeoutConfig(seconds=30, per_attempt=False))  # 30s total deadline
+def call_db(): ...
+```
+
+### Health Check
+
+Inspect circuit breaker states across your registry:
+
+```python
+from pyresilience import ResilienceRegistry, health_check
+
+registry = ResilienceRegistry()
+# ... register and use services ...
+
+status = health_check(registry)
+# {"payment-api": "CLOSED", "inventory-api": "OPEN"}
+```
+
+### Graceful Shutdown
+
+Drain in-flight calls before stopping:
+
+```python
+from pyresilience import shutdown
+
+shutdown(wait=True, timeout=30)  # Wait up to 30s for in-flight calls to complete
+```
+
 ## Performance
 
 Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Silicon). Full benchmark code in [`benchmarks/`](benchmarks/).
@@ -203,6 +278,11 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 | Bulkhead | Yes | - | - | - | - |
 | Rate Limiter | Yes | - | - | - | - |
 | Cache | Yes | - | - | - | - |
+| Retry Budget | Yes | - | - | - | - |
+| Context Propagation | Yes | - | - | - | - |
+| Health Check | Yes | - | - | - | - |
+| Prometheus | Yes | - | - | - | - |
+| OpenTelemetry | Yes | - | - | - | - |
 | Unified API | Yes | - | - | - | - |
 | Zero Dependencies | Yes | Yes | - | - | - |
 | Async | Yes | Yes | - | Yes | Yes |

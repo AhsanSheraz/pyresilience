@@ -40,6 +40,7 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `seconds` | `float` | `30.0` | Timeout duration |
+| `per_attempt` | `bool` | `True` | Per-attempt timeout (`True`) or total deadline (`False`) |
 | `pool_size` | `int` | `4` | Thread pool size for sync timeouts |
 
 ### `CircuitBreakerConfig`
@@ -117,6 +118,73 @@ Centralized management of named resilience configurations.
 | `clear()` | Remove all configs |
 | `names` | List all registered names |
 
+### `RetryBudgetConfig`
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_retries` | `int` | `100` | Maximum retry tokens in the budget pool |
+| `refill_rate` | `float` | `10` | Tokens refilled per second |
+
+### `RetryBudget`
+
+Shared retry budget instance. Created with `RetryBudget(RetryBudgetConfig(...))`.
+
+| Method | Description |
+|--------|-------------|
+| `acquire()` | Consume a retry token. Returns `True` if granted, `False` if exhausted |
+| `available` | Number of tokens currently available |
+
+## Context
+
+### `resilience_context`
+
+A `contextvars.ContextVar[Optional[dict]]` that carries request-scoped metadata into every `ResilienceEvent.context` field.
+
+```python
+from pyresilience import resilience_context
+
+resilience_context.set({"trace_id": "abc-123"})
+```
+
+## Lifecycle
+
+### `shutdown()`
+
+Drains in-flight calls and releases thread pool resources. Call during application shutdown.
+
+```python
+from pyresilience import shutdown
+
+shutdown()
+```
+
+### `get_in_flight_count()`
+
+Returns the number of currently executing resilient calls. Requires `enable_in_flight_tracking()` to be called first.
+
+```python
+from pyresilience import enable_in_flight_tracking, get_in_flight_count
+
+enable_in_flight_tracking()
+# ... after some calls are in progress ...
+count = get_in_flight_count()
+```
+
+### `enable_in_flight_tracking()`
+
+Activates in-flight call counting. Disabled by default to avoid overhead. Once enabled, `get_in_flight_count()` returns accurate counts.
+
+### `health_check(registry)`
+
+Returns a dict summarizing resilience state for all registered functions in a `ResilienceRegistry`.
+
+```python
+from pyresilience import ResilienceRegistry, health_check
+
+status = health_check(registry)
+# {"payment-api": {"circuit_breaker": "closed", "in_flight": 3, ...}, ...}
+```
+
 ## Presets
 
 ### `http_policy(**kwargs)`
@@ -163,6 +231,7 @@ In-memory metrics collector.
 | `attempt` | `int` | Current attempt number |
 | `error` | `BaseException?` | The exception, if any |
 | `detail` | `str` | Additional detail |
+| `context` | `Optional[dict]` | Request-scoped metadata from `resilience_context` |
 
 ### `EventType`
 

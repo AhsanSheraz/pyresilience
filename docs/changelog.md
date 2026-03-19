@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3.1 (2026-03-19)
+
+### New Features
+- **Context propagation**: `resilience_context` ContextVar carries request-scoped metadata (trace ID, user ID, etc.) into every `ResilienceEvent.context` field automatically
+- **Per-attempt timeout**: `TimeoutConfig(per_attempt=False)` enforces a single deadline across all retry attempts instead of resetting per attempt
+- **Retry budget**: `RetryBudgetConfig(max_retries=100, refill_rate=10)` provides a shared token pool that prevents cascading retries across decorated functions
+- **Health check**: `health_check(registry)` returns a dict summarizing circuit breaker states, in-flight calls, and rate limiter availability for all registered functions
+- **OpenTelemetry listener**: `OpenTelemetryListener` emits spans and attributes for each resilience event, integrating with the OpenTelemetry SDK
+- **Prometheus listener**: `PrometheusListener` exports counters, histograms, and gauges to Prometheus via the official client library
+- **Graceful shutdown**: `shutdown()` drains in-flight calls and releases thread pool resources cleanly
+
+### Bug Fixes
+- **Cache lock memory leak**: Per-key locks in cache stampede prevention are now evicted alongside their cache entries, preventing unbounded lock accumulation
+- **`asyncio.iscoroutinefunction` deprecation**: Replaced remaining usage with `inspect.iscoroutinefunction` for Python 3.14+ compatibility
+- **`install_uvloop` deprecated API**: Switched from `uvloop.install()` to `uvloop.EventLoopPolicy()` to silence deprecation warnings
+- **Registry executor exposure**: `ResilienceRegistry` now exposes executors via `get_executor(name)` for runtime introspection without private attribute access
+
+### Performance
+- <0.15us overhead increase from new features (context propagation, in-flight tracking)
+- Lazy in-flight tracking: counter and lock only allocated when `enable_in_flight_tracking()` is called
+
+### Tests
+- 357 tests (up from 289), 96% branch coverage
+- New tests for context propagation, per-attempt timeout, retry budget, health check, OpenTelemetry listener, Prometheus listener, and graceful shutdown
+
+---
+
 ## v0.3.0 (2026-03-19)
 
 ### New Features
