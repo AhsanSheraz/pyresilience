@@ -1,0 +1,170 @@
+{
+  "python_version": "3.10.5",
+  "platform": "darwin",
+  "overhead": {
+    "bare (no decorator)": {
+      "mean_us": 0.12,
+      "median_us": 0.12,
+      "p95_us": 0.17,
+      "p99_us": 0.21
+    },
+    "pyresilience": {
+      "mean_us": 0.67,
+      "median_us": 0.67,
+      "p95_us": 0.75,
+      "p99_us": 0.79
+    },
+    "tenacity": {
+      "mean_us": 10.75,
+      "median_us": 10.58,
+      "p95_us": 12.08,
+      "p99_us": 13.46
+    },
+    "backoff": {
+      "mean_us": 1.66,
+      "median_us": 1.67,
+      "p95_us": 1.75,
+      "p99_us": 1.83
+    },
+    "stamina": {
+      "mean_us": 9.31,
+      "median_us": 9.38,
+      "p95_us": 9.62,
+      "p99_us": 11.04
+    },
+    "pybreaker": {
+      "mean_us": 1.25,
+      "median_us": 1.25,
+      "p95_us": 1.33,
+      "p99_us": 1.5
+    }
+  },
+  "retry": {
+    "pyresilience": {
+      "mean_us": 3785.85,
+      "median_us": 3811.38,
+      "p95_us": 3881.67,
+      "p99_us": 4082.83
+    },
+    "tenacity": {
+      "mean_us": 2680.99,
+      "median_us": 2678.17,
+      "p95_us": 2787.96,
+      "p99_us": 2970.62
+    },
+    "backoff": {
+      "mean_us": 1370.61,
+      "median_us": 1363.04,
+      "p95_us": 2235.17,
+      "p99_us": 2485.5
+    },
+    "stamina": {
+      "mean_us": 2808.92,
+      "median_us": 2798.85,
+      "p95_us": 3001.29,
+      "p99_us": 3181.54
+    }
+  },
+  "circuit_breaker": {
+    "pyresilience": {
+      "mean_us": 1.64,
+      "median_us": 1.54,
+      "p95_us": 2.42,
+      "p99_us": 3.04
+    },
+    "pybreaker": {
+      "mean_us": 1.22,
+      "median_us": 1.21,
+      "p95_us": 1.42,
+      "p99_us": 1.5
+    }
+  },
+  "fallback": {
+    "pyresilience": {
+      "mean_us": 1.16,
+      "median_us": 1.0,
+      "p95_us": 2.04,
+      "p99_us": 2.71
+    }
+  },
+  "bulkhead": {
+    "pyresilience": {
+      "mean_us": 1.77,
+      "median_us": 1.75,
+      "p95_us": 1.88,
+      "p99_us": 2.04
+    }
+  },
+  "rate_limiter": {
+    "pyresilience": {
+      "mean_us": 1.24,
+      "median_us": 1.25,
+      "p95_us": 1.33,
+      "p99_us": 1.38
+    }
+  },
+  "cache": {
+    "pyresilience": {
+      "mean_us": 1.29,
+      "median_us": 1.29,
+      "p95_us": 1.38,
+      "p99_us": 1.5
+    }
+  },
+  "combined": {
+    "pyresilience (1 decorator)": {
+      "mean_us": 13.29,
+      "median_us": 13.08,
+      "p95_us": 14.92,
+      "p99_us": 18.46
+    },
+    "tenacity+pybreaker (2 stacked)": {
+      "mean_us": 12.12,
+      "median_us": 12.08,
+      "p95_us": 13.08,
+      "p99_us": 14.29
+    }
+  },
+  "all_patterns": {
+    "pyresilience (all 7 patterns)": {
+      "mean_us": 1.27,
+      "median_us": 1.29,
+      "p95_us": 1.33,
+      "p99_us": 1.46
+    }
+  },
+  "throughput": {
+    "pyresilience": {
+      "elapsed_s": 0.069,
+      "ops_per_sec": 145942
+    },
+    "tenacity": {
+      "elapsed_s": 0.222,
+      "ops_per_sec": 44980
+    }
+  },
+  "memory": {
+    "pyresilience": {
+      "current_kb": 1528.4,
+      "peak_kb": 1529.0
+    },
+    "tenacity": {
+      "current_kb": 2415.9,
+      "peak_kb": 2416.3
+    }
+  },
+  "async": {
+    "pyresilience": {
+      "mean_us": 0.79,
+      "median_us": 0.79,
+      "p95_us": 0.83,
+      "p99_us": 0.92
+    },
+    "tenacity": {
+      "mean_us": 20.46,
+      "median_us": 19.29,
+      "p95_us": 21.38,
+      "p99_us": 62.17
+    }
+  }
+}
