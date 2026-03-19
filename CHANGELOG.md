@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-03-19
+
+### Changed
+- Updated PyPI description to include all seven patterns
+- Added missing imports in quickstart examples
+- Added comparison table disclaimer
+- Added "Why not Tenacity + PyBreaker?" side-by-side example in docs
+- Added observability and FastAPI examples to top-level docs
+- Added Dependabot auto-merge workflow
+
 ## [0.1.1] - 2026-03-19
 
 ### Changed
@@ -43,5 +53,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codecov integration
 - Comprehensive Resilience4j-style documentation
 
+[0.1.2]: https://github.com/AhsanSheraz/pyresilience/releases/tag/v0.1.2
 [0.1.1]: https://github.com/AhsanSheraz/pyresilience/releases/tag/v0.1.1
 [0.1.0]: https://github.com/AhsanSheraz/pyresilience/releases/tag/v0.1.0
