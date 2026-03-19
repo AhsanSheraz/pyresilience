@@ -312,14 +312,17 @@ class _SyncExecutor:
     def execute(self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any) -> Any:
         # Set unique call ID for MetricsCollector latency tracking
         call_id_var.set(next(_call_id_counter))
-        _track_call_start()
+        _tracking = _tracking_enabled
+        if _tracking:
+            _track_call_start()
 
         try:
-            return self._execute_inner(func, func_name, *args, **kwargs)
+            return self._execute_core(func, func_name, *args, **kwargs)
         finally:
-            _track_call_end()
+            if _tracking:
+                _track_call_end()
 
-    def _execute_inner(
+    def _execute_core(
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         listeners = self._listeners
@@ -785,14 +788,17 @@ class _AsyncExecutor:
     ) -> Any:
         # Set unique call ID for MetricsCollector latency tracking
         call_id_var.set(next(_call_id_counter))
-        _track_call_start()
+        _tracking = _tracking_enabled
+        if _tracking:
+            _track_call_start()
 
         try:
-            return await self._execute_inner(func, func_name, *args, **kwargs)
+            return await self._execute_core(func, func_name, *args, **kwargs)
         finally:
-            _track_call_end()
+            if _tracking:
+                _track_call_end()
 
-    async def _execute_inner(
+    async def _execute_core(
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         listeners = self._listeners

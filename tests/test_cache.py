@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
+
+import pytest
 
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
 from pyresilience._types import CacheConfig
@@ -337,7 +340,8 @@ class TestCacheLockCleanupSync:
 
 
 class TestCacheLockCleanupAsync:
-    def test_async_lru_eviction_cleans_up_async_key_lock(self) -> None:
+    @pytest.mark.asyncio
+    async def test_async_lru_eviction_cleans_up_async_key_lock(self) -> None:
         """After LRU eviction in AsyncResultCache, async lock is cleaned up."""
         config = CacheConfig(max_size=2, ttl=60.0)
         cache = AsyncResultCache(config)
@@ -350,7 +354,8 @@ class TestCacheLockCleanupAsync:
 
         assert "k1" not in cache._async_key_locks
 
-    def test_async_ttl_expiration_cleans_up_async_key_lock(self) -> None:
+    @pytest.mark.asyncio
+    async def test_async_ttl_expiration_cleans_up_async_key_lock(self) -> None:
         """After TTL expiration in AsyncResultCache, async lock is cleaned up."""
         config = CacheConfig(max_size=10, ttl=0.05)
         cache = AsyncResultCache(config)
@@ -358,11 +363,12 @@ class TestCacheLockCleanupAsync:
         cache.get_async_key_lock("k1")
         assert "k1" in cache._async_key_locks
 
-        time.sleep(0.1)
+        await asyncio.sleep(0.1)
         assert cache.get("k1") is _SENTINEL
         assert "k1" not in cache._async_key_locks
 
-    def test_async_invalidate_cleans_up_async_key_lock(self) -> None:
+    @pytest.mark.asyncio
+    async def test_async_invalidate_cleans_up_async_key_lock(self) -> None:
         """After invalidate in AsyncResultCache, async lock is cleaned up."""
         config = CacheConfig(max_size=10, ttl=60.0)
         cache = AsyncResultCache(config)
@@ -373,7 +379,8 @@ class TestCacheLockCleanupAsync:
         cache.invalidate("k1")
         assert "k1" not in cache._async_key_locks
 
-    def test_async_clear_cleans_up_all_async_key_locks(self) -> None:
+    @pytest.mark.asyncio
+    async def test_async_clear_cleans_up_all_async_key_locks(self) -> None:
         """After clear in AsyncResultCache, all async locks are cleaned up."""
         config = CacheConfig(max_size=10, ttl=60.0)
         cache = AsyncResultCache(config)
