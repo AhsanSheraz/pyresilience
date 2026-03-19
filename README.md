@@ -59,6 +59,21 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 | **Rate Limiter** | `RateLimiterConfig` | Token bucket rate limiting |
 | **Cache** | `CacheConfig` | LRU result caching with TTL |
 
+## Comparison
+
+| | pyresilience | tenacity | pybreaker | backoff | stamina |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Retry | Yes | Yes | - | Yes | Yes |
+| Circuit Breaker | Yes | - | Yes | - | - |
+| Timeout | Yes | - | - | - | - |
+| Fallback | Yes | - | - | - | - |
+| Bulkhead | Yes | - | - | - | - |
+| Rate Limiter | Yes | - | - | - | - |
+| Cache | Yes | - | - | - | - |
+| Unified API | Yes | - | - | - | - |
+| Zero Dependencies | Yes | Yes | - | - | - |
+| Async | Yes | Yes | - | Yes | Yes |
+
 ## Documentation
 
 Full guides, API reference, and examples at **[pyresilience.readthedocs.io](https://pyresilience.readthedocs.io/)**.
