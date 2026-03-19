@@ -3,7 +3,7 @@
 <p align="center">
   <a href="https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml"><img src="https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/AhsanSheraz/pyresilience"><img src="https://codecov.io/gh/AhsanSheraz/pyresilience/graph/badge.svg?token=egEaq767Fi" alt="Coverage"></a>
-  <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/v/pyresilience.svg?cacheSeconds=0" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/v/pyresilience.svg?v=0.3.1" alt="PyPI version"></a>
   <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/pyversions/pyresilience.svg" alt="Python versions"></a>
   <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/dm/pyresilience.svg" alt="Downloads"></a>
   <a href="https://github.com/AhsanSheraz/pyresilience/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/pyresilience.svg" alt="License"></a>
