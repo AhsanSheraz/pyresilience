@@ -4,7 +4,7 @@ One of pyresilience's key advantages is combining multiple resilience patterns i
 
 ## Execution Order
 
-When multiple patterns are configured, they execute in this order (matching Resilience4j's decoration order):
+When multiple patterns are configured, they execute in this order:
 
 ```
 Incoming call

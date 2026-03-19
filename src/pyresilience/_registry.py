@@ -74,20 +74,23 @@ class ResilienceRegistry:
             if key in self._executors:
                 return self._executors[key]
 
-        config = self.get_or_default(name)
+            config = self._configs.get(name)
+            if config is None:
+                config = self._default_config
+            if config is None:
+                raise KeyError(f"No config registered for '{name}' and no default set")
 
-        if is_async:
-            from pyresilience._executor import _AsyncExecutor
+            if is_async:
+                from pyresilience._executor import _AsyncExecutor
 
-            result: Any = _AsyncExecutor(config)
-        else:
-            from pyresilience._executor import _SyncExecutor
+                result: Any = _AsyncExecutor(config)
+            else:
+                from pyresilience._executor import _SyncExecutor
 
-            result = _SyncExecutor(config)
+                result = _SyncExecutor(config)
 
-        with self._lock:
             self._executors[key] = result
-        return result
+            return result
 
     def decorator(self, name: str) -> Callable[[F], F]:
         """Create a decorator that applies the named resilience config.

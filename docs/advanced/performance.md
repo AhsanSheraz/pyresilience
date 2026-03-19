@@ -1,18 +1,56 @@
 # Performance
 
-pyresilience is designed to add minimal overhead to your function calls. For production workloads, optional backends can further improve performance.
+pyresilience is designed to add minimal overhead to your function calls. Benchmarked on macOS (Apple Silicon) across Python 3.10 — 3.14.
 
 ## Overhead
 
-pyresilience adds negligible overhead for the patterns themselves:
+Measured with 100k calls per benchmark. These are real numbers, not estimates.
 
-- **No patterns enabled**: ~1-2 microseconds (function wrapper only)
-- **Retry (no actual retry)**: ~3-5 microseconds
-- **Circuit breaker check**: ~2-3 microseconds (thread-safe lock acquisition)
-- **Rate limiter check**: ~2-3 microseconds
-- **Cache lookup**: ~3-5 microseconds (dict lookup + LRU update)
+| Pattern | Mean Latency (Python 3.14) |
+|---------|----------:|
+| No decorator (baseline) | 0.11us |
+| Retry (happy path, no failures) | 0.56us |
+| Circuit breaker (closed state) | 1.04us |
+| Fallback (triggered) | 0.90us |
+| Bulkhead (acquire/release) | 1.09us |
+| Rate limiter (within limits) | 0.86us |
+| Cache (hit) | 0.95us |
+| **All 7 patterns combined (cache hit)** | **0.98us** |
 
-The actual latency of your function call will always dominate.
+For any real-world I/O operation (HTTP calls at ~50ms, DB queries at ~5ms), pyresilience's overhead is <0.02%.
+
+## vs Competitors
+
+### Happy Path (no failures, 100k calls)
+
+| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
+|---------|----------:|----------:|----------:|----------:|
+| **pyresilience** | **0.67us** | **0.58us** | **0.55us** | **0.56us** |
+| tenacity | 10.75us | 7.80us | 7.47us | 7.09us |
+| backoff | 1.66us | 1.65us | 1.53us | 1.49us |
+| stamina | 9.31us | 7.49us | 7.03us | 6.72us |
+| pybreaker | 1.25us | 0.91us | 0.86us | 0.83us |
+
+### Throughput (10k calls, 10 threads, ops/sec)
+
+| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
+|---------|----------:|----------:|----------:|----------:|
+| **pyresilience** | **145,942** | **172,508** | **228,151** | **228,685** |
+| tenacity | 44,980 | 73,735 | 80,909 | 84,348 |
+
+### Async (50k calls)
+
+| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
+|---------|----------:|----------:|----------:|----------:|
+| **pyresilience** | **0.79us** | **0.73us** | **0.66us** | **0.72us** |
+| tenacity | 20.46us | 17.27us | 20.51us | 20.14us |
+
+### Memory (1,000 decorated functions)
+
+| Library | Python 3.10 | Python 3.12 | Python 3.13 | Python 3.14 |
+|---------|----------:|----------:|----------:|----------:|
+| **pyresilience** | **1,528 KB** | **1,290 KB** | **1,295 KB** | **1,202 KB** |
+| tenacity | 2,416 KB | 2,192 KB | 2,336 KB | 2,254 KB |
 
 ## Optional Performance Backends
 
@@ -63,6 +101,7 @@ All pyresilience components are thread-safe:
 - **RateLimiter**: Uses `threading.Lock`
 - **ResultCache**: Uses `threading.Lock`
 - **Registry**: Uses `threading.Lock`
+- **MetricsCollector**: Uses `threading.Lock`
 
 You can safely share these across threads without external synchronization.
 

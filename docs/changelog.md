@@ -2,7 +2,7 @@
 
 ## v0.1.0 (2026-03-19)
 
-Initial release with full Resilience4j feature parity.
+Initial release with all 7 resilience patterns.
 
 ### Core Modules
 - **CircuitBreaker** — State machine (CLOSED/OPEN/HALF_OPEN) with configurable thresholds

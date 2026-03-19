@@ -2,11 +2,9 @@
 
 **Unified resilience patterns for Python** — retry, circuit breaker, timeout, fallback, bulkhead, rate limiter, and cache in one decorator.
 
-pyresilience is Python's equivalent of Java's [Resilience4j](https://resilience4j.readme.io/). Instead of stacking multiple decorators from different libraries, define your entire resilience policy in a single `@resilient()` call.
+Instead of stacking multiple decorators from different libraries, define your entire resilience policy in a single `@resilient()` call.
 
 ## Why pyresilience?
-
-In Java, Resilience4j is the standard for fault tolerance — it combines circuit breakers, retries, rate limiters, and more into one cohesive library. Python has been missing this.
 
 Existing Python libraries solve individual problems well:
 
@@ -16,17 +14,17 @@ Existing Python libraries solve individual problems well:
 
 But combining them means stacking decorators, managing separate configs, and losing visibility across patterns. **pyresilience** unifies everything.
 
-## Feature Parity with Resilience4j
+## All Seven Patterns
 
-| Resilience4j Module | pyresilience Equivalent | Description |
-|---------------------|------------------------|-------------|
-| CircuitBreaker | `CircuitBreakerConfig` | Prevents calls to failing services |
+| Module | Config | Description |
+|--------|--------|-------------|
+| Circuit Breaker | `CircuitBreakerConfig` | Prevents calls to failing services |
 | Retry | `RetryConfig` | Retries failed calls with backoff |
 | Bulkhead | `BulkheadConfig` | Limits concurrent executions |
-| TimeLimiter | `TimeoutConfig` | Enforces per-call time limits |
-| RateLimiter | `RateLimiterConfig` | Limits call rate per time window |
+| Timeout | `TimeoutConfig` | Enforces per-call time limits |
+| Rate Limiter | `RateLimiterConfig` | Limits call rate per time window |
 | Cache | `CacheConfig` | Caches successful results |
-| Registry | `ResilienceRegistry` | Manages named resilience instances |
+| Fallback | `FallbackConfig` | Graceful degradation on failure |
 
 ## At a Glance
 
@@ -53,7 +51,7 @@ All patterns work together, with a unified event system for observability.
 
 ## Key Features
 
-- **All 7 Resilience4j patterns** in one library
+- **All 7 resilience patterns** in one library
 - **One decorator** — `@resilient()` combines everything
 - **Zero dependencies** — pure Python stdlib
 - **Full async support** — auto-detects sync vs async

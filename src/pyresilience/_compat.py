@@ -35,7 +35,7 @@ def install_uvloop() -> bool:
     try:
         import asyncio
 
-        import uvloop  # type: ignore[import-not-found]
+        import uvloop  # type: ignore[import-not-found,unused-ignore]
 
         if not isinstance(asyncio.get_event_loop_policy(), uvloop.EventLoopPolicy):
             uvloop.install()

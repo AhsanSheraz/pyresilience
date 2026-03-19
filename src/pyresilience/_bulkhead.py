@@ -47,10 +47,16 @@ class AsyncBulkhead:
         return self._semaphore
 
     async def acquire(self) -> bool:
-        """Try to acquire a slot. Returns True if successful."""
+        """Try to acquire a slot. Returns True if successful.
+
+        Note: In asyncio's cooperative scheduling model, the check-then-acquire
+        pattern is safe when max_wait=0 because no other coroutine can run
+        between locked() and the synchronous part of acquire() — there's no
+        await point in between. The semaphore's acquire() only suspends if the
+        value is 0, which we've already checked.
+        """
         sem = self._get_semaphore()
         if self._config.max_wait <= 0:
-            # Try without waiting
             if sem.locked():
                 return False
             await sem.acquire()
