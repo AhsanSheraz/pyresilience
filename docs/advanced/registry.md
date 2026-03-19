@@ -1,6 +1,6 @@
 # Registry
 
-The registry provides centralized management of named resilience configurations. Multiple functions decorated with the same registry name share the same circuit breaker, rate limiter, and other stateful components — just like Resilience4j's `CircuitBreakerRegistry`.
+The registry provides centralized management of named resilience configurations. Multiple functions decorated with the same registry name share the same circuit breaker, rate limiter, and other stateful components.
 
 ## Concepts
 

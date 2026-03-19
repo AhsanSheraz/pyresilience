@@ -62,7 +62,26 @@ class ResilientMiddleware:
         async def _handle() -> None:
             await self.app(scope, receive, send)
 
-        await self.executor.execute(_handle)
+        try:
+            await self.executor.execute(_handle)
+        except RuntimeError as exc:
+            if "circuit breaker is open" in str(exc).lower():
+                await self._send_503(send)
+            else:
+                raise
+
+    @staticmethod
+    async def _send_503(send: Any) -> None:
+        """Send a 503 Service Unavailable response."""
+        await send({
+            "type": "http.response.start",
+            "status": 503,
+            "headers": [[b"content-type", b"application/json"]],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b'{"detail":"Service temporarily unavailable"}',
+        })
 
 
 class ResilientDependency:
