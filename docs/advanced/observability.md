@@ -35,6 +35,7 @@ class ResilienceEvent:
 | `CACHE_MISS` | No cache entry found |
 | `SUCCESS` | The call succeeded |
 | `FAILURE` | The call failed (non-retryable or exhausted) |
+| `SLOW_CALL` | A call exceeded the slow call duration threshold |
 
 ## Custom Listeners
 

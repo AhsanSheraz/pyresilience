@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 from typing import Any, Callable, Optional, TypeVar, overload
 
 from pyresilience._executor import _AsyncExecutor, _SyncExecutor
@@ -87,7 +87,7 @@ def resilient(
     )
 
     def decorator(fn: F) -> F:
-        if asyncio.iscoroutinefunction(fn):
+        if inspect.iscoroutinefunction(fn):
             executor = _AsyncExecutor(config)
 
             @functools.wraps(fn)

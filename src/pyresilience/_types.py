@@ -29,6 +29,7 @@ class EventType(enum.Enum):
     RATE_LIMITED = "rate_limited"
     CACHE_HIT = "cache_hit"
     CACHE_MISS = "cache_miss"
+    SLOW_CALL = "slow_call"
     SUCCESS = "success"
     FAILURE = "failure"
 
@@ -59,6 +60,9 @@ class RetryConfig:
         max_delay: Maximum delay between retries in seconds.
         jitter: If True, add random jitter to delay.
         retry_on: Exception types to retry on. Defaults to (Exception,).
+        retry_on_result: Optional predicate function that receives the result and
+            returns True if the call should be retried. Useful for retrying on
+            specific return values (e.g., HTTP 429 responses) without raising exceptions.
     """
 
     max_attempts: int = 3
@@ -67,6 +71,7 @@ class RetryConfig:
     max_delay: float = 60.0
     jitter: bool = True
     retry_on: Sequence[Type[BaseException]] = (Exception,)
+    retry_on_result: Optional[Callable[[Any], bool]] = None
 
 
 @dataclass
@@ -75,26 +80,48 @@ class TimeoutConfig:
 
     Args:
         seconds: Maximum time in seconds before a call is aborted.
+        pool_size: Thread pool size for sync timeouts. Defaults to 4.
     """
 
     seconds: float = 30.0
+    pool_size: int = 4
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for circuit breaker behavior.
 
+    Supports two modes:
+    - **Consecutive count** (default): Opens after ``failure_threshold`` consecutive failures.
+    - **Sliding window**: Opens when failure rate exceeds ``failure_rate_threshold`` within
+      the last ``sliding_window_size`` calls. Enable by setting ``sliding_window_size > 0``.
+
     Args:
-        failure_threshold: Number of consecutive failures before opening the circuit.
+        failure_threshold: Consecutive failures before opening (used when sliding_window_size=0).
         recovery_timeout: Seconds to wait before transitioning to half-open.
         success_threshold: Consecutive successes in half-open needed to close the circuit.
         error_types: Exception types that count as failures.
+        sliding_window_size: Number of recent calls to track. 0 disables sliding window
+            and uses consecutive failure count instead.
+        failure_rate_threshold: Failure rate (0.0-1.0) that triggers opening when using
+            sliding window. E.g., 0.5 means "open at 50% failure rate".
+        minimum_calls: Minimum calls in the sliding window before the failure rate is
+            evaluated. Prevents opening on the first few calls.
+        slow_call_duration: Calls exceeding this duration (seconds) count as slow calls.
+            0.0 disables slow call detection.
+        slow_call_rate_threshold: Rate of slow calls (0.0-1.0) that triggers opening.
+            E.g., 0.5 means "open when 50% of calls are slow".
     """
 
     failure_threshold: int = 5
     recovery_timeout: float = 30.0
     success_threshold: int = 2
     error_types: Sequence[Type[BaseException]] = (Exception,)
+    sliding_window_size: int = 0
+    failure_rate_threshold: float = 0.5
+    minimum_calls: int = 0
+    slow_call_duration: float = 0.0
+    slow_call_rate_threshold: float = 1.0
 
 
 @dataclass

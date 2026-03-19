@@ -56,6 +56,8 @@ All patterns work together, with a unified event system for observability.
 - **Zero dependencies** — pure Python stdlib
 - **Full async support** — auto-detects sync vs async
 - **Type-safe** — strict mypy compatible, `py.typed` marker
+- **Sliding window circuit breaker** — failure rate % threshold, slow call detection
+- **Retry on result** — retry based on return values, not just exceptions
 - **Opinionated presets** — `http_policy()`, `db_policy()`, `queue_policy()`
 - **Structured observability** — JSON logging, metrics collection
 - **Optional performance backends** — uvloop + orjson

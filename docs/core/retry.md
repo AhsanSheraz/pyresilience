@@ -41,8 +41,9 @@ config = RetryConfig(
 | `delay` | `float` | `1.0` | Initial delay between retries in seconds |
 | `backoff_factor` | `float` | `2.0` | Multiplier applied to delay after each retry |
 | `max_delay` | `float` | `60.0` | Maximum delay between retries in seconds |
-| `jitter` | `bool` | `True` | Add random jitter to delay (0.5x to 1.0x of calculated delay) |
+| `jitter` | `bool` | `True` | Add random jitter to delay (full jitter: 0 to 1.0x of calculated delay) |
 | `retry_on` | `Sequence[Type]` | `(Exception,)` | Exception types that trigger a retry |
+| `retry_on_result` | `Callable[[Any], bool]` | `None` | Predicate to retry based on return value |
 
 ## Usage
 
@@ -98,6 +99,33 @@ async def publish_message(msg: dict) -> None:
 ))
 def simple_retry():
     return do_something()
+```
+
+### Retry on Result
+
+Retry based on return values instead of (or in addition to) exceptions:
+
+```python
+@resilient(retry=RetryConfig(
+    max_attempts=5,
+    delay=1.0,
+    retry_on_result=lambda r: r.get("status") == 429,  # Retry on rate limit
+))
+def call_api() -> dict:
+    return requests.get("https://api.example.com").json()
+```
+
+The predicate receives the return value. If it returns `True`, the call is retried. On the last attempt, the result is returned regardless of the predicate.
+
+```python
+# Retry until a non-empty result
+@resilient(retry=RetryConfig(
+    max_attempts=3,
+    delay=0.5,
+    retry_on_result=lambda r: r is None or len(r) == 0,
+))
+def poll_queue() -> list:
+    return queue.receive_messages()
 ```
 
 ## Events

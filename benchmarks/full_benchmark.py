@@ -497,11 +497,12 @@ if __name__ == "__main__":
     all_results["memory"] = bench_memory()
     all_results["async"] = bench_async()
 
-    # Save results as JSON
+    # Optionally save results as JSON
     output_file = f"benchmarks/results_{python_version}.json"
-    with open(output_file, "w") as f:
-        json.dump(all_results, f, indent=2)
-    print(f"\nResults saved to {output_file}")
+    if "--save" in sys.argv:
+        with open(output_file, "w") as f:
+            json.dump(all_results, f, indent=2)
+        print(f"\nResults saved to {output_file}")
 
     # Print summary
     print("\n" + "=" * 70)

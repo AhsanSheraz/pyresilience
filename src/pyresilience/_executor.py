@@ -1,4 +1,12 @@
-"""Core resilience executor — orchestrates all patterns."""
+"""Core resilience executor — orchestrates all patterns.
+
+Performance-critical module. Key optimizations:
+- Pre-cache config lookups as instance attributes at init time
+- Inline isinstance() calls instead of helper function dispatch
+- Guard event emission with bool check to skip _emit overhead
+- Cache frequently-accessed attributes as locals in hot loops
+- Use shared thread pool by default, custom pool only when configured
+"""
 
 from __future__ import annotations
 
@@ -7,7 +15,7 @@ import contextlib
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Optional, Type, TypeVar
+from typing import Any, Callable, Optional, Type
 
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead, BulkheadFullError
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
@@ -23,10 +31,11 @@ from pyresilience._types import (
     RetryConfig,
 )
 
-F = TypeVar("F", bound=Callable[..., Any])
+# Shared thread pool for sync timeouts — reused across executors with default pool_size
+_default_timeout_pool = ThreadPoolExecutor(max_workers=4)
 
-# Shared thread pool for sync timeouts
-_timeout_pool = ThreadPoolExecutor(max_workers=4)
+# Cache random.random locally to avoid attribute lookup in hot path
+_random = random.random
 
 
 def _emit(
@@ -37,8 +46,7 @@ def _emit(
     error: Optional[BaseException] = None,
     detail: str = "",
 ) -> None:
-    if not listeners:
-        return
+    """Emit an event to all listeners. No-op when listeners list is empty."""
     event = ResilienceEvent(
         event_type=event_type,
         function_name=func_name,
@@ -51,45 +59,56 @@ def _emit(
             listener(event)
 
 
-def _compute_delay(config: RetryConfig, attempt: int) -> float:
-    delay = config.delay * (config.backoff_factor ** (attempt - 1))
-    delay = min(delay, config.max_delay)
-    if config.jitter:
-        delay = delay * (0.5 + random.random() * 0.5)
+def _compute_delay(retry_cfg: RetryConfig, attempt: int) -> float:
+    """Calculate retry delay with exponential backoff and optional full jitter."""
+    delay = retry_cfg.delay * (retry_cfg.backoff_factor ** (attempt - 1))
+    if delay > retry_cfg.max_delay:
+        delay = retry_cfg.max_delay
+    if retry_cfg.jitter:
+        delay = _random() * delay
     return delay
 
 
-def _is_retryable(exc: BaseException, retry_on: tuple[Type[BaseException], ...]) -> bool:
-    return isinstance(exc, retry_on)
-
-
-def _is_circuit_error(exc: BaseException, error_types: tuple[Type[BaseException], ...]) -> bool:
-    return isinstance(exc, error_types)
-
-
-def _is_fallback_error(exc: BaseException, fallback_on: tuple[Type[BaseException], ...]) -> bool:
-    return isinstance(exc, fallback_on)
-
-
-def _apply_fallback(config: FallbackConfig, exc: BaseException) -> Any:
-    handler = config.handler
+def _apply_fallback(fallback_cfg: FallbackConfig, exc: BaseException) -> Any:
+    """Apply fallback handler or return static fallback value."""
+    handler = fallback_cfg.handler
     if callable(handler):
         return handler(exc)
     return handler
 
 
 class _SyncExecutor:
-    """Executes a sync function with resilience patterns."""
+    """Executes a sync function with resilience patterns.
+
+    All config is resolved once at __init__ and stored as instance attrs
+    to minimize per-call overhead.
+    """
+
+    __slots__ = (
+        "_bulkhead",
+        "_cache",
+        "_circuit_breaker",
+        "_circuit_error_types",
+        "_fallback_cfg",
+        "_fallback_on",
+        "_has_listeners",
+        "_has_timeout",
+        "_listeners",
+        "_max_attempts",
+        "_rate_limiter",
+        "_retry_cfg",
+        "_retry_on",
+        "_retry_on_result",
+        "_slow_call_duration",
+        "_timeout_pool",
+        "_timeout_seconds",
+    )
 
     def __init__(self, config: ResilienceConfig) -> None:
-        self.config = config
-        self.listeners = config.listeners
-        self.circuit_breaker: Optional[CircuitBreaker] = None
-        self.bulkhead: Optional[Bulkhead] = None
-        self.rate_limiter: Optional[RateLimiter] = None
-        self.cache: Optional[ResultCache] = None
+        self._listeners = config.listeners
+        self._has_listeners = bool(config.listeners)
 
-        # Pre-cache tuple conversions for isinstance checks (avoid per-call overhead)
+        # Pre-cache tuples for isinstance checks (avoids per-call list→tuple conversion)
         self._retry_on: tuple[Type[BaseException], ...] = (
             tuple(config.retry.retry_on) if config.retry else ()
         )
@@ -103,121 +122,201 @@ class _SyncExecutor:
         self._fallback_cfg = config.fallback
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
-        self._has_fallback = config.fallback is not None
+        self._timeout_seconds = config.timeout.seconds if config.timeout else 0.0
+        self._retry_on_result = config.retry.retry_on_result if config.retry else None
+        self._slow_call_duration = (
+            config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
+        )
 
-        if config.circuit_breaker:
-            self.circuit_breaker = CircuitBreaker(config.circuit_breaker)
-        if config.bulkhead:
-            self.bulkhead = Bulkhead(config.bulkhead)
-        if config.rate_limiter:
-            self.rate_limiter = RateLimiter(config.rate_limiter)
-        if config.cache:
-            self.cache = ResultCache(config.cache)
+        # Share global pool unless custom pool_size is configured
+        if config.timeout and config.timeout.pool_size != 4:
+            self._timeout_pool: ThreadPoolExecutor = ThreadPoolExecutor(
+                max_workers=config.timeout.pool_size
+            )
+        else:
+            self._timeout_pool = _default_timeout_pool
+
+        self._circuit_breaker: Optional[CircuitBreaker] = (
+            CircuitBreaker(config.circuit_breaker) if config.circuit_breaker else None
+        )
+        self._bulkhead: Optional[Bulkhead] = Bulkhead(config.bulkhead) if config.bulkhead else None
+        self._rate_limiter: Optional[RateLimiter] = (
+            RateLimiter(config.rate_limiter) if config.rate_limiter else None
+        )
+        self._cache: Optional[ResultCache] = ResultCache(config.cache) if config.cache else None
 
     def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        func_name = func.__name__  # Fast path: functions always have __name__
-        listeners = self.listeners
+        func_name = func.__name__
+        listeners = self._listeners
+        has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
+        cache = self._cache
 
-        # Cache check
+        # Cache check — fast path for repeated calls
         cache_key: Optional[str] = None
-        if self.cache:
+        if cache is not None:
             cache_key = ResultCache.make_key(*args, **kwargs)
-            cached = self.cache.get(cache_key)
+            cached = cache.get(cache_key)
             if cached is not _SENTINEL:
-                _emit(listeners, EventType.CACHE_HIT, func_name)
+                if has_listeners:
+                    _emit(listeners, EventType.CACHE_HIT, func_name)
                 return cached
-            _emit(listeners, EventType.CACHE_MISS, func_name)
+            if has_listeners:
+                _emit(listeners, EventType.CACHE_MISS, func_name)
 
-        # Circuit breaker check
-        if self.circuit_breaker and not self.circuit_breaker.allow_request():
-            _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+        # Circuit breaker — reject immediately when open
+        circuit_breaker = self._circuit_breaker
+        if circuit_breaker is not None and not circuit_breaker.allow_request():
+            if has_listeners:
+                _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
             if fallback_cfg is not None:
-                _emit(listeners, EventType.FALLBACK_USED, func_name)
-                err = RuntimeError("Circuit breaker is open")
-                return _apply_fallback(fallback_cfg, err)
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name)
+                return _apply_fallback(fallback_cfg, RuntimeError("Circuit breaker is open"))
             raise RuntimeError("Circuit breaker is open")
 
-        # Rate limiter check
-        if self.rate_limiter and not self.rate_limiter.acquire():
-            _emit(listeners, EventType.RATE_LIMITED, func_name)
+        # Rate limiter
+        rate_limiter = self._rate_limiter
+        if rate_limiter is not None and not rate_limiter.acquire():
+            if has_listeners:
+                _emit(listeners, EventType.RATE_LIMITED, func_name)
             if fallback_cfg is not None:
-                _emit(listeners, EventType.FALLBACK_USED, func_name)
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name)
                 return _apply_fallback(fallback_cfg, RateLimitExceededError("Rate limit exceeded"))
             raise RateLimitExceededError("Rate limit exceeded")
 
-        # Bulkhead acquire
-        if self.bulkhead and not self.bulkhead.acquire():
-            _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
+        # Bulkhead
+        bulkhead = self._bulkhead
+        if bulkhead is not None and not bulkhead.acquire():
+            if has_listeners:
+                _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
             if fallback_cfg is not None:
-                _emit(listeners, EventType.FALLBACK_USED, func_name)
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name)
                 return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
             raise BulkheadFullError("Bulkhead full")
 
         try:
-            result = self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
-            # Store in cache on success
-            if self.cache and cache_key is not None:
-                self.cache.put(cache_key, result)
+            result = self._execute_with_retry(
+                func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+            )
+            if cache is not None and cache_key is not None:
+                cache.put(cache_key, result)
             return result
         finally:
-            if self.bulkhead:
-                self.bulkhead.release()
+            if bulkhead is not None:
+                bulkhead.release()
 
     def _execute_with_retry(
         self,
         func: Callable[..., Any],
         func_name: str,
         listeners: list[ResilienceListener],
+        has_listeners: bool,
+        circuit_breaker: Optional[CircuitBreaker],
         *args: Any,
         **kwargs: Any,
     ) -> Any:
         retry_cfg = self._retry_cfg
         max_attempts = self._max_attempts
-        circuit_breaker = self.circuit_breaker
-        last_exc: Optional[BaseException] = None
+        retry_on = self._retry_on
+        circuit_error_types = self._circuit_error_types
+        fallback_on = self._fallback_on
+        fallback_cfg = self._fallback_cfg
+        has_timeout = self._has_timeout
+        retry_on_result = self._retry_on_result
+        slow_call_duration = self._slow_call_duration
+        track_duration = circuit_breaker is not None and slow_call_duration > 0
+        last_exc: Optional[Exception] = None
+        call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
             try:
-                if self._has_timeout:
+                if track_duration:
+                    call_start = time.monotonic()
+
+                if has_timeout:
                     result = self._execute_with_timeout(func, func_name, listeners, *args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
 
-                # Record circuit breaker success
-                if circuit_breaker:
-                    new_state = circuit_breaker.record_success()
-                    if new_state == CircuitState.CLOSED:
-                        _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+                duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                # Check retry_on_result predicate
+                if retry_on_result is not None and retry_on_result(result):
+                    if attempt < max_attempts:
+                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY,
+                                func_name,
+                                attempt=attempt,
+                                detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            )
+                        if delay > 0:
+                            time.sleep(delay)
+                        continue
+                    # Last attempt: predicate matched but no retries left
+                    if has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.RETRY_EXHAUSTED,
+                            func_name,
+                            attempt=attempt,
+                            detail="result predicate matched on final attempt",
+                        )
+                    return result
+
+                if circuit_breaker is not None:
+                    prev_state = circuit_breaker.state
+                    new_state = circuit_breaker.record_success(duration)
+                    if (
+                        new_state == CircuitState.CLOSED
+                        and prev_state != CircuitState.CLOSED
+                        and has_listeners
+                    ):
+                        _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+                    if track_duration and duration >= slow_call_duration and has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.SLOW_CALL,
+                            func_name,
+                            detail=f"{duration:.3f}s >= {slow_call_duration}s",
+                        )
+
+                if has_listeners:
+                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
                 return result
 
-            except BaseException as exc:
+            except Exception as exc:
                 last_exc = exc
+                duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                # Record circuit breaker failure
-                if circuit_breaker and _is_circuit_error(exc, self._circuit_error_types):
-                    new_state = circuit_breaker.record_failure()
-                    if new_state == CircuitState.OPEN:
+                # Circuit breaker tracking
+                if circuit_breaker is not None and isinstance(exc, circuit_error_types):
+                    new_state = circuit_breaker.record_failure(duration)
+                    if new_state == CircuitState.OPEN and has_listeners:
                         _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
 
-                # Check if retryable
-                if retry_cfg and attempt < max_attempts and _is_retryable(exc, self._retry_on):
+                # Retry if retryable and attempts remain
+                if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
                     delay = _compute_delay(retry_cfg, attempt)
-                    _emit(
-                        listeners,
-                        EventType.RETRY,
-                        func_name,
-                        attempt=attempt,
-                        error=exc,
-                        detail=f"retrying in {delay:.2f}s",
-                    )
+                    if has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.RETRY,
+                            func_name,
+                            attempt=attempt,
+                            error=exc,
+                            detail=f"retrying in {delay:.2f}s",
+                        )
                     time.sleep(delay)
                     continue
 
-                # Exhausted retries or not retryable
-                if retry_cfg and attempt >= max_attempts:
+                # Retries exhausted
+                if retry_cfg is not None and attempt >= max_attempts and has_listeners:
                     _emit(
                         listeners,
                         EventType.RETRY_EXHAUSTED,
@@ -226,17 +325,26 @@ class _SyncExecutor:
                         error=exc,
                     )
 
-                # Try fallback
-                fallback_cfg = self._fallback_cfg
-                if fallback_cfg is not None and _is_fallback_error(exc, self._fallback_on):
-                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                # Fallback
+                if fallback_cfg is not None and isinstance(exc, fallback_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
                     return _apply_fallback(fallback_cfg, exc)
 
-                _emit(listeners, EventType.FAILURE, func_name, error=exc)
+                if has_listeners:
+                    _emit(listeners, EventType.FAILURE, func_name, error=exc)
                 raise
 
-        # Should not reach here, but satisfy type checker
-        if last_exc:
+        # Retries exhausted via retry_on_result (no exception to re-raise)
+        # Note: currently unreachable — last attempt always returns via success path
+        if retry_cfg is not None and has_listeners:  # pragma: no cover
+            _emit(
+                listeners,
+                EventType.RETRY_EXHAUSTED,
+                func_name,
+                attempt=max_attempts,
+            )
+        if last_exc:  # pragma: no cover
             raise last_exc
         raise RuntimeError("Unexpected state in retry loop")  # pragma: no cover
 
@@ -250,34 +358,53 @@ class _SyncExecutor:
     ) -> Any:
         import concurrent.futures
 
-        timeout_cfg = self.config.timeout
-        assert timeout_cfg is not None  # guarded by _has_timeout
-        future = _timeout_pool.submit(func, *args, **kwargs)
+        timeout_seconds = self._timeout_seconds
+        future = self._timeout_pool.submit(func, *args, **kwargs)
         try:
-            return future.result(timeout=timeout_cfg.seconds)
+            return future.result(timeout=timeout_seconds)
         except (TimeoutError, concurrent.futures.TimeoutError):
             future.cancel()
-            _emit(
-                listeners,
-                EventType.TIMEOUT,
-                func_name,
-                detail=f"exceeded {timeout_cfg.seconds}s",
-            )
-            raise TimeoutError(f"{func_name} exceeded timeout of {timeout_cfg.seconds}s") from None
+            if self._has_listeners:
+                _emit(
+                    listeners,
+                    EventType.TIMEOUT,
+                    func_name,
+                    detail=f"exceeded {timeout_seconds}s",
+                )
+            raise TimeoutError(f"{func_name} exceeded timeout of {timeout_seconds}s") from None
 
 
 class _AsyncExecutor:
-    """Executes an async function with resilience patterns."""
+    """Executes an async function with resilience patterns.
+
+    Mirrors _SyncExecutor optimizations: pre-cached config, inlined isinstance,
+    guarded event emission, cached locals in hot loops.
+    """
+
+    __slots__ = (
+        "_bulkhead",
+        "_cache",
+        "_circuit_breaker",
+        "_circuit_error_types",
+        "_fallback_cfg",
+        "_fallback_on",
+        "_has_listeners",
+        "_has_timeout",
+        "_listeners",
+        "_max_attempts",
+        "_rate_limiter",
+        "_retry_cfg",
+        "_retry_on",
+        "_retry_on_result",
+        "_slow_call_duration",
+        "_timeout_seconds",
+    )
 
     def __init__(self, config: ResilienceConfig) -> None:
-        self.config = config
-        self.listeners = config.listeners
-        self.circuit_breaker: Optional[CircuitBreaker] = None
-        self.bulkhead: Optional[AsyncBulkhead] = None
-        self.rate_limiter: Optional[AsyncRateLimiter] = None
-        self.cache: Optional[AsyncResultCache] = None
+        self._listeners = config.listeners
+        self._has_listeners = bool(config.listeners)
 
-        # Pre-cache tuple conversions for isinstance checks
+        # Pre-cache tuples for isinstance checks
         self._retry_on: tuple[Type[BaseException], ...] = (
             tuple(config.retry.retry_on) if config.retry else ()
         )
@@ -291,138 +418,209 @@ class _AsyncExecutor:
         self._fallback_cfg = config.fallback
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
-        self._has_fallback = config.fallback is not None
+        self._timeout_seconds = config.timeout.seconds if config.timeout else 0.0
+        self._retry_on_result = config.retry.retry_on_result if config.retry else None
+        self._slow_call_duration = (
+            config.circuit_breaker.slow_call_duration if config.circuit_breaker else 0.0
+        )
 
-        if config.circuit_breaker:
-            self.circuit_breaker = CircuitBreaker(config.circuit_breaker)
-        if config.bulkhead:
-            self.bulkhead = AsyncBulkhead(config.bulkhead)
-        if config.rate_limiter:
-            self.rate_limiter = AsyncRateLimiter(config.rate_limiter)
-        if config.cache:
-            self.cache = AsyncResultCache(config.cache)
+        self._circuit_breaker: Optional[CircuitBreaker] = (
+            CircuitBreaker(config.circuit_breaker) if config.circuit_breaker else None
+        )
+        self._bulkhead: Optional[AsyncBulkhead] = (
+            AsyncBulkhead(config.bulkhead) if config.bulkhead else None
+        )
+        self._rate_limiter: Optional[AsyncRateLimiter] = (
+            AsyncRateLimiter(config.rate_limiter) if config.rate_limiter else None
+        )
+        self._cache: Optional[AsyncResultCache] = (
+            AsyncResultCache(config.cache) if config.cache else None
+        )
 
     async def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         func_name = func.__name__
-        listeners = self.listeners
+        listeners = self._listeners
+        has_listeners = self._has_listeners
         fallback_cfg = self._fallback_cfg
+        cache = self._cache
 
         # Cache check
         cache_key: Optional[str] = None
-        if self.cache:
+        if cache is not None:
             cache_key = AsyncResultCache.make_key(*args, **kwargs)
-            cached = self.cache.get(cache_key)
+            cached = cache.get(cache_key)
             if cached is not _SENTINEL:
-                _emit(listeners, EventType.CACHE_HIT, func_name)
+                if has_listeners:
+                    _emit(listeners, EventType.CACHE_HIT, func_name)
                 return cached
-            _emit(listeners, EventType.CACHE_MISS, func_name)
+            if has_listeners:
+                _emit(listeners, EventType.CACHE_MISS, func_name)
 
-        # Circuit breaker check
-        if self.circuit_breaker and not self.circuit_breaker.allow_request():
-            _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
+        # Circuit breaker
+        circuit_breaker = self._circuit_breaker
+        if circuit_breaker is not None and not circuit_breaker.allow_request():
+            if has_listeners:
+                _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
             if fallback_cfg is not None:
-                _emit(listeners, EventType.FALLBACK_USED, func_name)
-                err = RuntimeError("Circuit breaker is open")
-                return _apply_fallback(fallback_cfg, err)
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name)
+                return _apply_fallback(fallback_cfg, RuntimeError("Circuit breaker is open"))
             raise RuntimeError("Circuit breaker is open")
 
-        # Rate limiter check
-        if self.rate_limiter:
-            acquired = await self.rate_limiter.acquire()
-            if not acquired:
+        # Rate limiter
+        rate_limiter = self._rate_limiter
+        if rate_limiter is not None and not await rate_limiter.acquire():
+            if has_listeners:
                 _emit(listeners, EventType.RATE_LIMITED, func_name)
-                if fallback_cfg is not None:
+            if fallback_cfg is not None:
+                if has_listeners:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
-                    return _apply_fallback(
-                        fallback_cfg, RateLimitExceededError("Rate limit exceeded")
-                    )
-                raise RateLimitExceededError("Rate limit exceeded")
+                return _apply_fallback(fallback_cfg, RateLimitExceededError("Rate limit exceeded"))
+            raise RateLimitExceededError("Rate limit exceeded")
 
-        # Bulkhead acquire
-        if self.bulkhead:
-            acquired = await self.bulkhead.acquire()
-            if not acquired:
+        # Bulkhead
+        bulkhead = self._bulkhead
+        if bulkhead is not None and not await bulkhead.acquire():
+            if has_listeners:
                 _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
-                if fallback_cfg is not None:
+            if fallback_cfg is not None:
+                if has_listeners:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
-                    return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
-                raise BulkheadFullError("Bulkhead full")
+                return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
+            raise BulkheadFullError("Bulkhead full")
 
         try:
-            result = await self._execute_with_retry(func, func_name, listeners, *args, **kwargs)
-            # Store in cache on success
-            if self.cache and cache_key is not None:
-                self.cache.put(cache_key, result)
+            result = await self._execute_with_retry(
+                func, func_name, listeners, has_listeners, circuit_breaker, *args, **kwargs
+            )
+            if cache is not None and cache_key is not None:
+                cache.put(cache_key, result)
             return result
         finally:
-            if self.bulkhead:
-                self.bulkhead.release()
+            if bulkhead is not None:
+                bulkhead.release()
 
     async def _execute_with_retry(
         self,
         func: Callable[..., Any],
         func_name: str,
         listeners: list[ResilienceListener],
+        has_listeners: bool,
+        circuit_breaker: Optional[CircuitBreaker],
         *args: Any,
         **kwargs: Any,
     ) -> Any:
         retry_cfg = self._retry_cfg
         max_attempts = self._max_attempts
-        circuit_breaker = self.circuit_breaker
-        last_exc: Optional[BaseException] = None
+        retry_on = self._retry_on
+        circuit_error_types = self._circuit_error_types
+        fallback_on = self._fallback_on
+        fallback_cfg = self._fallback_cfg
+        has_timeout = self._has_timeout
+        timeout_seconds = self._timeout_seconds
+        retry_on_result = self._retry_on_result
+        slow_call_duration = self._slow_call_duration
+        track_duration = circuit_breaker is not None and slow_call_duration > 0
+        last_exc: Optional[Exception] = None
+        call_start: float = 0.0
 
         for attempt in range(1, max_attempts + 1):
             try:
-                if self._has_timeout:
-                    timeout_cfg = self.config.timeout
-                    assert timeout_cfg is not None
+                if track_duration:
+                    call_start = time.monotonic()
+
+                if has_timeout:
                     try:
                         result = await asyncio.wait_for(
-                            func(*args, **kwargs), timeout=timeout_cfg.seconds
+                            func(*args, **kwargs), timeout=timeout_seconds
                         )
                     except asyncio.TimeoutError:
-                        _emit(
-                            listeners,
-                            EventType.TIMEOUT,
-                            func_name,
-                            detail=f"exceeded {timeout_cfg.seconds}s",
-                        )
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.TIMEOUT,
+                                func_name,
+                                detail=f"exceeded {timeout_seconds}s",
+                            )
                         raise TimeoutError(
-                            f"{func_name} exceeded timeout of {timeout_cfg.seconds}s"
+                            f"{func_name} exceeded timeout of {timeout_seconds}s"
                         ) from None
                 else:
                     result = await func(*args, **kwargs)
 
-                if circuit_breaker:
-                    new_state = circuit_breaker.record_success()
-                    if new_state == CircuitState.CLOSED:
-                        _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+                duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
+                # Check retry_on_result predicate
+                if retry_on_result is not None and retry_on_result(result):
+                    if attempt < max_attempts:
+                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        if has_listeners:
+                            _emit(
+                                listeners,
+                                EventType.RETRY,
+                                func_name,
+                                attempt=attempt,
+                                detail=f"result predicate triggered, retrying in {delay:.2f}s",
+                            )
+                        if delay > 0:
+                            await asyncio.sleep(delay)
+                        continue
+                    # Last attempt: predicate matched but no retries left
+                    if has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.RETRY_EXHAUSTED,
+                            func_name,
+                            attempt=attempt,
+                            detail="result predicate matched on final attempt",
+                        )
+                    return result
+
+                if circuit_breaker is not None:
+                    prev_state = circuit_breaker.state
+                    new_state = circuit_breaker.record_success(duration)
+                    if (
+                        new_state == CircuitState.CLOSED
+                        and prev_state != CircuitState.CLOSED
+                        and has_listeners
+                    ):
+                        _emit(listeners, EventType.CIRCUIT_CLOSED, func_name)
+                    if track_duration and duration >= slow_call_duration and has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.SLOW_CALL,
+                            func_name,
+                            detail=f"{duration:.3f}s >= {slow_call_duration}s",
+                        )
+
+                if has_listeners:
+                    _emit(listeners, EventType.SUCCESS, func_name, attempt=attempt)
                 return result
 
-            except BaseException as exc:
+            except Exception as exc:
                 last_exc = exc
+                duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                if circuit_breaker and _is_circuit_error(exc, self._circuit_error_types):
-                    new_state = circuit_breaker.record_failure()
-                    if new_state == CircuitState.OPEN:
+                if circuit_breaker is not None and isinstance(exc, circuit_error_types):
+                    new_state = circuit_breaker.record_failure(duration)
+                    if new_state == CircuitState.OPEN and has_listeners:
                         _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
 
-                if retry_cfg and attempt < max_attempts and _is_retryable(exc, self._retry_on):
+                if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
                     delay = _compute_delay(retry_cfg, attempt)
-                    _emit(
-                        listeners,
-                        EventType.RETRY,
-                        func_name,
-                        attempt=attempt,
-                        error=exc,
-                        detail=f"retrying in {delay:.2f}s",
-                    )
+                    if has_listeners:
+                        _emit(
+                            listeners,
+                            EventType.RETRY,
+                            func_name,
+                            attempt=attempt,
+                            error=exc,
+                            detail=f"retrying in {delay:.2f}s",
+                        )
                     await asyncio.sleep(delay)
                     continue
 
-                if retry_cfg and attempt >= max_attempts:
+                if retry_cfg is not None and attempt >= max_attempts and has_listeners:
                     _emit(
                         listeners,
                         EventType.RETRY_EXHAUSTED,
@@ -431,14 +629,24 @@ class _AsyncExecutor:
                         error=exc,
                     )
 
-                fallback_cfg = self._fallback_cfg
-                if fallback_cfg is not None and _is_fallback_error(exc, self._fallback_on):
-                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
+                if fallback_cfg is not None and isinstance(exc, fallback_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
                     return _apply_fallback(fallback_cfg, exc)
 
-                _emit(listeners, EventType.FAILURE, func_name, error=exc)
+                if has_listeners:
+                    _emit(listeners, EventType.FAILURE, func_name, error=exc)
                 raise
 
-        if last_exc:
+        # Retries exhausted via retry_on_result (no exception to re-raise)
+        # Note: currently unreachable — last attempt always returns via success path
+        if retry_cfg is not None and has_listeners:  # pragma: no cover
+            _emit(
+                listeners,
+                EventType.RETRY_EXHAUSTED,
+                func_name,
+                attempt=max_attempts,
+            )
+        if last_exc:  # pragma: no cover
             raise last_exc
         raise RuntimeError("Unexpected state in retry loop")  # pragma: no cover

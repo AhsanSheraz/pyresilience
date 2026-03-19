@@ -7,12 +7,18 @@ import json as _stdlib_json
 import logging
 import threading
 import time
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:
     from pyresilience._types import ResilienceEvent
 
 logger = logging.getLogger("pyresilience")
+
+_monotonic = time.monotonic
+
+# Terminal event types that end a call's latency tracking
+_TERMINAL_EVENTS = frozenset(("success", "failure"))
 
 
 def _make_dumps() -> Callable[[Any], str]:
@@ -65,6 +71,8 @@ class JsonEventLogger:
             ...
     """
 
+    __slots__ = ("_include_timestamp", "_level", "_logger")
+
     def __init__(
         self,
         logger_name: str = "pyresilience",
@@ -104,29 +112,23 @@ class MetricsCollector:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._counts: dict[str, dict[str, int]] = {}
-        self._call_starts: dict[int, float] = {}  # keyed by thread/task id
-        self._latencies: dict[str, list[float]] = {}
+        self._counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._call_starts: dict[int, float] = {}
+        self._latencies: dict[str, list[float]] = defaultdict(list)
 
     def __call__(self, event: ResilienceEvent) -> None:
         func = event.function_name
         evt = event.event_type.value
-        # Use thread id for concurrent call tracking
         call_key = threading.get_ident()
 
         with self._lock:
-            if func not in self._counts:
-                self._counts[func] = {}
-            self._counts[func][evt] = self._counts[func].get(evt, 0) + 1
+            self._counts[func][evt] += 1
 
-            # Track latency from first attempt to success/failure
-            if event.attempt == 1 and evt not in ("success", "failure"):
-                self._call_starts[call_key] = time.monotonic()
-            if evt in ("success", "failure") and call_key in self._call_starts:
-                latency = time.monotonic() - self._call_starts.pop(call_key)
-                if func not in self._latencies:
-                    self._latencies[func] = []
-                self._latencies[func].append(latency)
+            # Track latency from first attempt to terminal event
+            if event.attempt == 1 and evt not in _TERMINAL_EVENTS:
+                self._call_starts[call_key] = _monotonic()
+            elif evt in _TERMINAL_EVENTS and call_key in self._call_starts:
+                self._latencies[func].append(_monotonic() - self._call_starts.pop(call_key))
 
     def get_counts(self, function_name: Optional[str] = None) -> dict[str, dict[str, int]]:
         """Get event counts, optionally filtered by function name."""
@@ -147,22 +149,21 @@ class MetricsCollector:
         with self._lock:
             result: dict[str, Any] = {}
             for func, counts in self._counts.items():
+                successes = counts.get("success", 0)
+                failures = counts.get("failure", 0)
+                total = successes + failures
                 latencies = self._latencies.get(func, [])
-                result[func] = {
+                entry: dict[str, Any] = {
                     "events": dict(counts),
-                    "total_calls": counts.get("success", 0) + counts.get("failure", 0),
-                    "success_rate": (
-                        counts.get("success", 0)
-                        / max(counts.get("success", 0) + counts.get("failure", 0), 1)
-                    ),
+                    "total_calls": total,
+                    "success_rate": successes / max(total, 1),
                 }
                 if latencies:
-                    result[func]["avg_latency_ms"] = round(
-                        sum(latencies) / len(latencies) * 1000, 2
-                    )
-                    result[func]["p99_latency_ms"] = round(
+                    entry["avg_latency_ms"] = round(sum(latencies) / len(latencies) * 1000, 2)
+                    entry["p99_latency_ms"] = round(
                         sorted(latencies)[int(len(latencies) * 0.99)] * 1000, 2
                     )
+                result[func] = entry
             return result
 
     def reset(self) -> None:

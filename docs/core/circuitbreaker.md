@@ -22,12 +22,14 @@ CLOSED ──(failures >= threshold)──> OPEN
 
 ### State Transitions
 
-- **CLOSED -> OPEN**: When consecutive failures reach `failure_threshold`
+- **CLOSED -> OPEN**: When consecutive failures reach `failure_threshold`, or failure rate exceeds `failure_rate_threshold` within a sliding window
 - **OPEN -> HALF_OPEN**: After `recovery_timeout` seconds have elapsed
 - **HALF_OPEN -> CLOSED**: When `success_threshold` consecutive successes occur
 - **HALF_OPEN -> OPEN**: On any failure during the half-open period
 
 ## Configuration
+
+### Basic (consecutive count)
 
 ```python
 from pyresilience import CircuitBreakerConfig
@@ -40,12 +42,39 @@ config = CircuitBreakerConfig(
 )
 ```
 
+### Sliding Window (failure rate %)
+
+```python
+config = CircuitBreakerConfig(
+    sliding_window_size=100,        # Track last 100 calls
+    failure_rate_threshold=0.5,     # Open at 50% failure rate
+    minimum_calls=10,               # Need at least 10 calls before evaluating
+    recovery_timeout=30.0,
+)
+```
+
+### Slow Call Detection
+
+```python
+config = CircuitBreakerConfig(
+    sliding_window_size=100,
+    failure_rate_threshold=0.5,
+    slow_call_duration=2.0,         # Calls > 2s are "slow"
+    slow_call_rate_threshold=0.8,   # Open if 80% of calls are slow
+)
+```
+
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `failure_threshold` | `int` | `5` | Consecutive failures before the circuit opens |
+| `failure_threshold` | `int` | `5` | Consecutive failures before the circuit opens (used when `sliding_window_size=0`) |
 | `recovery_timeout` | `float` | `30.0` | Seconds to wait in OPEN before transitioning to HALF_OPEN |
 | `success_threshold` | `int` | `2` | Consecutive successes in HALF_OPEN needed to close the circuit |
 | `error_types` | `Sequence[Type]` | `(Exception,)` | Exception types that count as failures |
+| `sliding_window_size` | `int` | `0` | Size of sliding window (0 = use consecutive count mode) |
+| `failure_rate_threshold` | `float` | `0.5` | Failure rate (0.0–1.0) to trip the circuit in sliding window mode |
+| `minimum_calls` | `int` | `0` | Minimum calls in window before evaluating thresholds |
+| `slow_call_duration` | `float` | `0.0` | Duration in seconds above which a call is considered "slow" (0 = disabled) |
+| `slow_call_rate_threshold` | `float` | `1.0` | Slow call rate (0.0–1.0) to trip the circuit |
 
 ## Usage
 
@@ -106,6 +135,23 @@ async def async_call() -> dict:
             return await resp.json()
 ```
 
+## Metrics
+
+Access real-time circuit breaker metrics via the `.metrics` property:
+
+```python
+from pyresilience._circuit_breaker import CircuitBreaker
+
+cb = CircuitBreaker(CircuitBreakerConfig(
+    sliding_window_size=100,
+    failure_rate_threshold=0.5,
+))
+
+# After some calls...
+print(cb.metrics)
+# {"failure_rate": 0.15, "slow_call_rate": 0.0, "total_calls": 47, "state": "closed"}
+```
+
 ## Events
 
 The circuit breaker emits these events:
@@ -115,6 +161,7 @@ The circuit breaker emits these events:
 | `EventType.CIRCUIT_OPEN` | Circuit transitions to OPEN (or a call is rejected while OPEN) |
 | `EventType.CIRCUIT_HALF_OPEN` | Circuit transitions to HALF_OPEN |
 | `EventType.CIRCUIT_CLOSED` | Circuit transitions back to CLOSED |
+| `EventType.SLOW_CALL` | A call exceeded `slow_call_duration` |
 
 ```python
 from pyresilience import resilient, CircuitBreakerConfig, EventType

@@ -18,4 +18,4 @@ def test_main_output(capsys: object) -> None:
 
     output = captured.getvalue()
     assert "pyresilience" in output
-    assert "v0.1.2" in output
+    assert "v0.2.0" in output

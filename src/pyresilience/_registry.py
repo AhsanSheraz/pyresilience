@@ -98,11 +98,11 @@ class ResilienceRegistry:
         Multiple functions decorated with the same name share the same
         circuit breaker, rate limiter, and other stateful components.
         """
-        import asyncio
         import functools
+        import inspect
 
         def wrapper(func: F) -> F:
-            if asyncio.iscoroutinefunction(func):
+            if inspect.iscoroutinefunction(func):
                 executor = self._get_executor(name, is_async=True)
 
                 @functools.wraps(func)
