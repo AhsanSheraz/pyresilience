@@ -73,15 +73,19 @@ class ResilientMiddleware:
     @staticmethod
     async def _send_503(send: Any) -> None:
         """Send a 503 Service Unavailable response."""
-        await send({
-            "type": "http.response.start",
-            "status": 503,
-            "headers": [[b"content-type", b"application/json"]],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": b'{"detail":"Service temporarily unavailable"}',
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 503,
+                "headers": [[b"content-type", b"application/json"]],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": b'{"detail":"Service temporarily unavailable"}',
+            }
+        )
 
 
 class ResilientDependency:

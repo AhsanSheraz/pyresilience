@@ -100,6 +100,7 @@ class _SyncExecutor:
             tuple(config.fallback.fallback_on) if config.fallback else ()
         )
         self._retry_cfg = config.retry
+        self._fallback_cfg = config.fallback
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
         self._has_fallback = config.fallback is not None
@@ -116,6 +117,7 @@ class _SyncExecutor:
     def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         func_name = func.__name__  # Fast path: functions always have __name__
         listeners = self.listeners
+        fallback_cfg = self._fallback_cfg
 
         # Cache check
         cache_key: Optional[str] = None
@@ -130,28 +132,26 @@ class _SyncExecutor:
         # Circuit breaker check
         if self.circuit_breaker and not self.circuit_breaker.allow_request():
             _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
-            if self._has_fallback:
+            if fallback_cfg is not None:
                 _emit(listeners, EventType.FALLBACK_USED, func_name)
                 err = RuntimeError("Circuit breaker is open")
-                return _apply_fallback(self.config.fallback, err)
+                return _apply_fallback(fallback_cfg, err)
             raise RuntimeError("Circuit breaker is open")
 
         # Rate limiter check
         if self.rate_limiter and not self.rate_limiter.acquire():
             _emit(listeners, EventType.RATE_LIMITED, func_name)
-            if self._has_fallback:
+            if fallback_cfg is not None:
                 _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(
-                    self.config.fallback, RateLimitExceededError("Rate limit exceeded")
-                )
+                return _apply_fallback(fallback_cfg, RateLimitExceededError("Rate limit exceeded"))
             raise RateLimitExceededError("Rate limit exceeded")
 
         # Bulkhead acquire
         if self.bulkhead and not self.bulkhead.acquire():
             _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
-            if self._has_fallback:
+            if fallback_cfg is not None:
                 _emit(listeners, EventType.FALLBACK_USED, func_name)
-                return _apply_fallback(self.config.fallback, BulkheadFullError("Bulkhead full"))
+                return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
             raise BulkheadFullError("Bulkhead full")
 
         try:
@@ -227,9 +227,10 @@ class _SyncExecutor:
                     )
 
                 # Try fallback
-                if self._has_fallback and _is_fallback_error(exc, self._fallback_on):
+                fallback_cfg = self._fallback_cfg
+                if fallback_cfg is not None and _is_fallback_error(exc, self._fallback_on):
                     _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
-                    return _apply_fallback(self.config.fallback, exc)
+                    return _apply_fallback(fallback_cfg, exc)
 
                 _emit(listeners, EventType.FAILURE, func_name, error=exc)
                 raise
@@ -287,6 +288,7 @@ class _AsyncExecutor:
             tuple(config.fallback.fallback_on) if config.fallback else ()
         )
         self._retry_cfg = config.retry
+        self._fallback_cfg = config.fallback
         self._max_attempts = config.retry.max_attempts if config.retry else 1
         self._has_timeout = config.timeout is not None
         self._has_fallback = config.fallback is not None
@@ -303,6 +305,7 @@ class _AsyncExecutor:
     async def execute(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         func_name = func.__name__
         listeners = self.listeners
+        fallback_cfg = self._fallback_cfg
 
         # Cache check
         cache_key: Optional[str] = None
@@ -317,10 +320,10 @@ class _AsyncExecutor:
         # Circuit breaker check
         if self.circuit_breaker and not self.circuit_breaker.allow_request():
             _emit(listeners, EventType.CIRCUIT_OPEN, func_name)
-            if self._has_fallback:
+            if fallback_cfg is not None:
                 _emit(listeners, EventType.FALLBACK_USED, func_name)
                 err = RuntimeError("Circuit breaker is open")
-                return _apply_fallback(self.config.fallback, err)
+                return _apply_fallback(fallback_cfg, err)
             raise RuntimeError("Circuit breaker is open")
 
         # Rate limiter check
@@ -328,10 +331,10 @@ class _AsyncExecutor:
             acquired = await self.rate_limiter.acquire()
             if not acquired:
                 _emit(listeners, EventType.RATE_LIMITED, func_name)
-                if self._has_fallback:
+                if fallback_cfg is not None:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
                     return _apply_fallback(
-                        self.config.fallback, RateLimitExceededError("Rate limit exceeded")
+                        fallback_cfg, RateLimitExceededError("Rate limit exceeded")
                     )
                 raise RateLimitExceededError("Rate limit exceeded")
 
@@ -340,9 +343,9 @@ class _AsyncExecutor:
             acquired = await self.bulkhead.acquire()
             if not acquired:
                 _emit(listeners, EventType.BULKHEAD_REJECTED, func_name)
-                if self._has_fallback:
+                if fallback_cfg is not None:
                     _emit(listeners, EventType.FALLBACK_USED, func_name)
-                    return _apply_fallback(self.config.fallback, BulkheadFullError("Bulkhead full"))
+                    return _apply_fallback(fallback_cfg, BulkheadFullError("Bulkhead full"))
                 raise BulkheadFullError("Bulkhead full")
 
         try:
@@ -428,9 +431,10 @@ class _AsyncExecutor:
                         error=exc,
                     )
 
-                if self._has_fallback and _is_fallback_error(exc, self._fallback_on):
+                fallback_cfg = self._fallback_cfg
+                if fallback_cfg is not None and _is_fallback_error(exc, self._fallback_on):
                     _emit(listeners, EventType.FALLBACK_USED, func_name, error=exc)
-                    return _apply_fallback(self.config.fallback, exc)
+                    return _apply_fallback(fallback_cfg, exc)
 
                 _emit(listeners, EventType.FAILURE, func_name, error=exc)
                 raise

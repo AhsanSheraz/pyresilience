@@ -21,7 +21,7 @@ def _make_dumps() -> Callable[[Any], str]:
         import orjson  # type: ignore[import-not-found]
 
         def _orjson_dumps(obj: Any) -> str:
-            return orjson.dumps(obj).decode("utf-8")
+            return str(orjson.dumps(obj).decode("utf-8"))
 
         return _orjson_dumps
     return lambda obj: _stdlib_json.dumps(obj, default=str)
