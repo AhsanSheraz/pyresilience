@@ -21,7 +21,14 @@
 
 ## Performance Benchmarks
 
-Benchmarked on macOS (Apple Silicon) across Python 3.10 — 3.14. Full benchmark code in [`benchmarks/`](https://github.com/AhsanSheraz/pyresilience/tree/main/benchmarks).
+Benchmarked on macOS (Apple Silicon) across Python 3.10 — 3.14. Run it yourself:
+
+```bash
+pip install pyresilience tenacity backoff stamina pybreaker
+python benchmarks/full_benchmark.py
+```
+
+Full benchmark code in [`benchmarks/`](https://github.com/AhsanSheraz/pyresilience/tree/main/benchmarks).
 
 ### Decorator Overhead (no-op function, 100k calls)
 
