@@ -78,6 +78,9 @@ class ResultCache:
             if self._ttl > 0 and (_monotonic() - timestamp) > self._ttl:
                 del self._store[key]
                 self._misses += 1
+                # Clean up the lock for the expired key
+                with self._key_locks_lock:
+                    self._key_locks.pop(key, None)
                 return _SENTINEL
 
             self._store.move_to_end(key)
@@ -92,14 +95,25 @@ class ResultCache:
             self._store[key] = (value, _monotonic())
 
             # Evict oldest entries if over capacity
+            evicted_keys = []
             while len(self._store) > self._max_size:
-                self._store.popitem(last=False)
+                evicted_key, _ = self._store.popitem(last=False)
+                evicted_keys.append(evicted_key)
+
+            # Clean up locks for evicted keys
+            if evicted_keys:
+                with self._key_locks_lock:
+                    for evicted_key in evicted_keys:
+                        self._key_locks.pop(evicted_key, None)
 
     def invalidate(self, key: Any) -> bool:
         """Remove a specific key. Returns True if it existed."""
         with self._lock:
             if key in self._store:
                 del self._store[key]
+                # Clean up the lock for the invalidated key
+                with self._key_locks_lock:
+                    self._key_locks.pop(key, None)
                 return True
             return False
 
@@ -153,13 +167,32 @@ class AsyncResultCache:
         return ResultCache.make_key(*args, **kwargs)
 
     def get(self, key: Any) -> Any:
-        return self._cache.get(key)
+        result = self._cache.get(key)
+        # If TTL expired and key was removed, also clean up async lock
+        if result is _SENTINEL and key not in self._cache._store:
+            with self._async_key_locks_lock:
+                self._async_key_locks.pop(key, None)
+        return result
 
     def put(self, key: Any, value: Any) -> None:
+        # Capture keys before put to detect evictions
+        old_keys = set(self._cache._store.keys())
         self._cache.put(key, value)
+        # Clean up async locks for evicted keys
+        new_keys = set(self._cache._store.keys())
+        evicted_keys = old_keys - new_keys
+        if evicted_keys:
+            with self._async_key_locks_lock:
+                for evicted_key in evicted_keys:
+                    self._async_key_locks.pop(evicted_key, None)
 
     def invalidate(self, key: Any) -> bool:
-        return self._cache.invalidate(key)
+        result = self._cache.invalidate(key)
+        # Clean up async lock if key was removed
+        if result:
+            with self._async_key_locks_lock:
+                self._async_key_locks.pop(key, None)
+        return result
 
     def get_async_key_lock(self, key: Any) -> asyncio.Lock:
         """Get a per-key async lock for cache stampede prevention."""

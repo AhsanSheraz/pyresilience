@@ -15,6 +15,7 @@ from pyresilience._types import (
     RateLimiterConfig,
     ResilienceConfig,
     ResilienceListener,
+    RetryBudgetConfig,
     RetryConfig,
     TimeoutConfig,
 )
@@ -36,6 +37,7 @@ def resilient(
     bulkhead: Optional[BulkheadConfig] = ...,
     rate_limiter: Optional[RateLimiterConfig] = ...,
     cache: Optional[CacheConfig] = ...,
+    retry_budget: Optional[RetryBudgetConfig] = ...,
     listeners: Optional[list[ResilienceListener]] = ...,
 ) -> Callable[[F], F]: ...
 
@@ -50,6 +52,7 @@ def resilient(
     bulkhead: Optional[BulkheadConfig] = None,
     rate_limiter: Optional[RateLimiterConfig] = None,
     cache: Optional[CacheConfig] = None,
+    retry_budget: Optional[RetryBudgetConfig] = None,
     listeners: Optional[list[ResilienceListener]] = None,
 ) -> Any:
     """Decorator that applies resilience patterns to a function.
@@ -73,6 +76,7 @@ def resilient(
         bulkhead: Bulkhead configuration for concurrency limiting.
         rate_limiter: Rate limiter configuration for call rate limiting.
         cache: Cache configuration for result caching.
+        retry_budget: Global retry budget configuration.
         listeners: List of callbacks to receive resilience events.
     """
     config = ResilienceConfig(
@@ -83,6 +87,7 @@ def resilient(
         bulkhead=bulkhead,
         rate_limiter=rate_limiter,
         cache=cache,
+        retry_budget=retry_budget,
         listeners=listeners or [],
     )
 

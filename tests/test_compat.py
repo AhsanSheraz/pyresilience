@@ -75,3 +75,30 @@ class TestCompat:
             dumps = get_json_dumps()
             dumps({"test": 1})
             mock_orjson.dumps.assert_called_once()
+
+
+class TestDeprecatedApiFixes:
+    def test_executor_uses_inspect_iscoroutinefunction(self) -> None:
+        """_executor.py uses inspect.iscoroutinefunction, not asyncio.iscoroutinefunction."""
+        import pathlib
+
+        executor_source = (
+            pathlib.Path(__file__).parent.parent / "src" / "pyresilience" / "_executor.py"
+        )
+        content = executor_source.read_text()
+
+        # Should import inspect
+        assert "import inspect" in content
+        # Should use inspect.iscoroutinefunction
+        assert "inspect.iscoroutinefunction" in content
+        # Should NOT use asyncio.iscoroutinefunction
+        assert "asyncio.iscoroutinefunction" not in content
+
+    def test_install_uvloop_does_not_use_get_event_loop_policy(self) -> None:
+        """install_uvloop() should not use deprecated asyncio.get_event_loop_policy()."""
+        import pathlib
+
+        compat_source = pathlib.Path(__file__).parent.parent / "src" / "pyresilience" / "_compat.py"
+        content = compat_source.read_text()
+
+        assert "get_event_loop_policy" not in content

@@ -28,17 +28,14 @@ def install_uvloop() -> bool:
     """Install uvloop as the default event loop policy if available.
 
     Returns True if uvloop was installed, False otherwise.
-    Safe to call multiple times.
+    Safe to call multiple times — uvloop.install() is idempotent.
     """
     if not has_uvloop():
         return False
     try:
-        import asyncio
-
         import uvloop
 
-        if not isinstance(asyncio.get_event_loop_policy(), uvloop.EventLoopPolicy):
-            uvloop.install()
+        uvloop.install()
         return True
     except Exception:
         return False

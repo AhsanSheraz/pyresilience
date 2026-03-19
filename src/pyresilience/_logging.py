@@ -25,6 +25,11 @@ call_id_var: contextvars.ContextVar[int] = contextvars.ContextVar(
     "pyresilience_call_id", default=-1
 )
 
+# User-defined context (e.g., request_id, trace_id) for event correlation
+resilience_context: contextvars.ContextVar[Optional[dict[str, Any]]] = contextvars.ContextVar(
+    "pyresilience_context", default=None
+)
+
 # Terminal event types that end a call's latency tracking
 _TERMINAL_EVENTS = frozenset(("success", "failure"))
 
@@ -59,6 +64,8 @@ def _event_to_dict(event: ResilienceEvent) -> dict[str, Any]:
         d["error_message"] = str(event.error)
     if event.detail:
         d["detail"] = event.detail
+    if event.context:
+        d["context"] = event.context
     return d
 
 

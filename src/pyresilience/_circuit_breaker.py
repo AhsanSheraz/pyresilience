@@ -84,6 +84,12 @@ class CircuitBreaker:
             self._check_recovery()
             return self._state
 
+    @property
+    def failure_count(self) -> int:
+        """Current consecutive failure count (consecutive count mode)."""
+        with self._lock:
+            return self._failure_count
+
     def _check_recovery(self) -> None:
         """Transition OPEN -> HALF_OPEN when recovery timeout has elapsed."""
         if (

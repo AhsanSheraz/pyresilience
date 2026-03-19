@@ -43,6 +43,7 @@ class ResilienceEvent:
     attempt: int = 0
     error: Optional[BaseException] = None
     detail: str = ""
+    context: Optional[dict[str, Any]] = None
 
 
 # Callback type for event listeners
@@ -90,10 +91,13 @@ class TimeoutConfig:
     Args:
         seconds: Maximum time in seconds before a call is aborted.
         pool_size: Thread pool size for sync timeouts. Defaults to 4.
+        per_attempt: If True, timeout applies to each retry attempt individually.
+            If False (default), timeout wraps the entire retry cycle.
     """
 
     seconds: float = 30.0
     pool_size: int = 4
+    per_attempt: bool = True
 
     def __post_init__(self) -> None:
         if self.seconds <= 0:
@@ -225,6 +229,27 @@ class CacheConfig:
 
 
 @dataclass
+class RetryBudgetConfig:
+    """Configuration for global retry budget.
+
+    Limits total retry attempts across all decorated functions using a token bucket.
+
+    Args:
+        max_retries: Maximum retry tokens in the bucket.
+        refill_rate: Tokens refilled per second.
+    """
+
+    max_retries: int = 100
+    refill_rate: float = 10.0
+
+    def __post_init__(self) -> None:
+        if self.max_retries < 1:
+            raise ValueError("max_retries must be >= 1")
+        if self.refill_rate <= 0:
+            raise ValueError("refill_rate must be > 0")
+
+
+@dataclass
 class ResilienceConfig:
     """Combined resilience configuration for the @resilient decorator.
 
@@ -238,4 +263,5 @@ class ResilienceConfig:
     bulkhead: Optional[BulkheadConfig] = None
     rate_limiter: Optional[RateLimiterConfig] = None
     cache: Optional[CacheConfig] = None
+    retry_budget: Optional[RetryBudgetConfig] = None
     listeners: list[ResilienceListener] = field(default_factory=list)

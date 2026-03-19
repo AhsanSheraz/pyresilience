@@ -76,7 +76,7 @@ python_version = "3.9"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["uvloop", "orjson"]
+module = ["uvloop", "orjson", "opentelemetry", "prometheus_client"]
 ignore_missing_imports = true
 
 [tool.ruff]
