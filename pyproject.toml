@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyresilience"
-version = "0.1.2"
+version = "0.2.0"
 description = "Unified resilience patterns for Python — retry, circuit breaker, timeout, fallback, bulkhead, rate limiter, and cache in one decorator."
 readme = "README.md"
 license = "MIT"

@@ -381,7 +381,7 @@ def bench_async():
 
 if __name__ == "__main__":
     print(f"Python {sys.version}")
-    print(f"pyresilience installed from PyPI (v0.1.2)")
+    print(f"pyresilience installed from PyPI (v0.2.0)")
 
     all_results = {}
     all_results["overhead"] = bench_overhead()
