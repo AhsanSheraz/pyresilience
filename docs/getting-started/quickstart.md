@@ -5,6 +5,7 @@
 The simplest usage — add retry with default settings:
 
 ```python
+import requests
 from pyresilience import resilient
 
 @resilient
@@ -19,6 +20,7 @@ When used without arguments, `@resilient` applies default retry (3 attempts, 1s 
 Pass configuration objects to enable specific patterns:
 
 ```python
+import requests
 from pyresilience import resilient, RetryConfig, TimeoutConfig
 
 @resilient(
@@ -34,6 +36,9 @@ def call_api(endpoint: str) -> dict:
 The decorator auto-detects async functions — no changes needed:
 
 ```python
+import aiohttp
+from pyresilience import resilient, RetryConfig, TimeoutConfig
+
 @resilient(
     retry=RetryConfig(max_attempts=3),
     timeout=TimeoutConfig(seconds=5),
@@ -70,6 +75,7 @@ from pyresilience import (
     cache=CacheConfig(max_size=256, ttl=300.0),
 )
 def get_user_profile(user_id: int) -> dict:
+    import requests
     return requests.get(f"https://api.example.com/users/{user_id}").json()
 ```
 

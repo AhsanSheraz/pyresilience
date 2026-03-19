@@ -27,6 +27,7 @@ Also works with `uv`, `poetry`, and `pdm`.
 ## Quick Start
 
 ```python
+import requests
 from pyresilience import resilient, RetryConfig, TimeoutConfig, CircuitBreakerConfig
 
 @resilient(
@@ -75,6 +76,8 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 | Unified API | Yes | - | - | - | - |
 | Zero Dependencies | Yes | Yes | - | - | - |
 | Async | Yes | Yes | - | Yes | Yes |
+
+*Comparison reflects built-in capabilities and unified API model, not every possible custom composition.*
 
 ## Documentation
 

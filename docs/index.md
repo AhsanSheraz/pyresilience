@@ -31,6 +31,7 @@ But combining them means stacking decorators, managing separate configs, and los
 ## At a Glance
 
 ```python
+import requests
 from pyresilience import resilient, RetryConfig, TimeoutConfig, CircuitBreakerConfig
 
 @resilient(
@@ -62,8 +63,108 @@ All patterns work together, with a unified event system for observability.
 - **Optional performance backends** — uvloop + orjson
 - **Python 3.9+** — tested on 3.9 through 3.14
 
+## Why Not Just Tenacity + PyBreaker?
+
+With separate libraries, you end up stacking decorators that don't share state:
+
+```python
+# Three libraries, three configs, no coordination
+from tenacity import retry, stop_after_attempt, wait_exponential
+from pybreaker import CircuitBreaker
+from wrapt_timeout_decorator import timeout
+
+breaker = CircuitBreaker(fail_max=5)
+
+@timeout(10)
+@breaker
+@retry(stop=stop_after_attempt(3), wait=wait_exponential())
+def call_api():
+    return requests.get("https://api.example.com/data").json()
+# No fallback. No rate limiting. No caching. No shared metrics.
+# The circuit breaker doesn't know about retries. Timeouts don't coordinate with backoff.
+```
+
+With pyresilience, everything is coordinated through one decorator:
+
+```python
+import requests
+from pyresilience import resilient, RetryConfig, TimeoutConfig, CircuitBreakerConfig
+from pyresilience import FallbackConfig, RateLimiterConfig, CacheConfig
+
+@resilient(
+    retry=RetryConfig(max_attempts=3, delay=1.0),
+    timeout=TimeoutConfig(seconds=10),
+    circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
+    fallback=FallbackConfig(handler=lambda e: {"error": "service unavailable"}),
+    rate_limiter=RateLimiterConfig(max_calls=100, period=60.0),
+    cache=CacheConfig(max_size=256, ttl=300.0),
+)
+def call_api():
+    return requests.get("https://api.example.com/data").json()
+# One decorator. All patterns. Shared state. Unified metrics.
+```
+
+The circuit breaker counts retried failures correctly. Rate limiting respects bulkhead limits. Cache short-circuits the entire pipeline. One event system observes everything.
+
+## Observability at a Glance
+
+Every resilience event — retries, circuit state changes, rate limit hits — can be observed with listeners:
+
+```python
+from pyresilience import resilient, RetryConfig, CircuitBreakerConfig
+from pyresilience import JsonEventLogger, MetricsCollector, EventType
+
+logger = JsonEventLogger()
+metrics = MetricsCollector()
+
+def alert_on_circuit_open(event):
+    if event.event_type == EventType.CIRCUIT_OPEN:
+        print(f"ALERT: Circuit opened for {event.function_name}")
+
+@resilient(
+    retry=RetryConfig(max_attempts=3),
+    circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
+    listeners=[logger, metrics, alert_on_circuit_open],
+)
+def payment_service(amount: float):
+    return process_payment(amount)
+
+# After some calls, check metrics:
+# metrics.summary() -> {"total_events": 150, "success_rate": 0.95, ...}
+```
+
+See [Observability](advanced/observability.md) for the full event system, JSON logging, and metrics collection.
+
+## FastAPI Integration
+
+Use pyresilience with FastAPI's dependency injection for per-route resilience:
+
+```python
+from fastapi import Depends, FastAPI
+from pyresilience import ResilienceConfig, RetryConfig, CircuitBreakerConfig
+from pyresilience.contrib.fastapi import ResilientDependency
+
+app = FastAPI()
+
+payment_resilience = ResilientDependency(ResilienceConfig(
+    retry=RetryConfig(max_attempts=3),
+    circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
+))
+
+@app.post("/charge")
+async def charge(
+    amount: float,
+    resilience: ResilientDependency = Depends(payment_resilience),
+):
+    return await resilience.call(payment_service.charge, amount)
+```
+
+Also supports [Django and Flask](advanced/frameworks.md).
+
 ## Next Steps
 
 - [Installation](getting-started/installation.md) — Get started in 30 seconds
 - [Quick Start](getting-started/quickstart.md) — Your first resilient function
 - [Core Modules](core/circuitbreaker.md) — Deep dive into each pattern
+- [Observability](advanced/observability.md) — Logging, metrics, and alerting
+- [Framework Integrations](advanced/frameworks.md) — FastAPI, Django, Flask
