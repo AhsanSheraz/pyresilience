@@ -1,12 +1,14 @@
 # pyresilience
 
-[![CI](https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml/badge.svg)](https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/AhsanSheraz/pyresilience/graph/badge.svg)](https://codecov.io/gh/AhsanSheraz/pyresilience)
-[![PyPI](https://img.shields.io/pypi/v/pyresilience.svg)](https://pypi.org/project/pyresilience/)
-[![PyPI - Downloads](https://img.shields.io/pypi/dm/pyresilience.svg)](https://pypi.org/project/pyresilience/)
-[![Python](https://img.shields.io/pypi/pyversions/pyresilience.svg)](https://pypi.org/project/pyresilience/)
-[![Documentation](https://readthedocs.org/projects/pyresilience/badge/?version=latest)](https://pyresilience.readthedocs.io/en/latest/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <a href="https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml"><img src="https://github.com/AhsanSheraz/pyresilience/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/AhsanSheraz/pyresilience"><img src="https://codecov.io/gh/AhsanSheraz/pyresilience/branch/main/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/v/pyresilience.svg" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/pyversions/pyresilience.svg" alt="Python versions"></a>
+  <a href="https://pypi.org/project/pyresilience/"><img src="https://img.shields.io/pypi/dm/pyresilience.svg" alt="Downloads"></a>
+  <a href="https://github.com/AhsanSheraz/pyresilience/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/pyresilience.svg" alt="License"></a>
+  <a href="https://pyresilience.readthedocs.io/en/latest/"><img src="https://readthedocs.org/projects/pyresilience/badge/?version=latest" alt="Documentation"></a>
+</p>
 
 **All resilience patterns. One decorator. Zero dependencies.**
 
