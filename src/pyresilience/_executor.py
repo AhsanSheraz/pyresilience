@@ -159,10 +159,6 @@ def _interrupt_thread(thread_id: int) -> bool:
             ctypes.c_ulong(thread_id),
             ctypes.py_object(ResilienceTimeoutError),
         )
-        if ret > 1:
-            # Affected more than one thread state — clear to prevent corruption
-            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), None)
-            return False
         return ret == 1
     except Exception:
         return False
