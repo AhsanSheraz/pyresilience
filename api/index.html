@@ -1,0 +1,2598 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Unified resilience patterns for Python — Python's Resilience4j">
+      
+      
+        <meta name="author" content="Ahsan Sheraz">
+      
+      
+        <link rel="canonical" href="https://pyresilience.readthedocs.io/api/">
+      
+      
+        <link rel="prev" href="../advanced/performance/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>API Reference - pyresilience</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="pyresilience" class="md-header__button md-logo" aria-label="pyresilience" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            pyresilience
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/AhsanSheraz/pyresilience" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AhsanSheraz/pyresilience
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="pyresilience" class="md-nav__button md-logo" aria-label="pyresilience" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    pyresilience
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/AhsanSheraz/pyresilience" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    AhsanSheraz/pyresilience
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Modules
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Modules
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/circuitbreaker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CircuitBreaker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/retry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Retry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/bulkhead/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bulkhead
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/timelimiter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TimeLimiter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/ratelimiter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RateLimiter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/cache/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cache
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/presets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Presets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/observability/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Observability
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/combining/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Combining Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/frameworks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Framework Integrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../advanced/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#decorator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decorator
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decorator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resilient
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retryconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timeoutconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TimeoutConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitbreakerconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreakerConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitbreaker-direct-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreaker (direct usage)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallbackconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FallbackConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bulkheadconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BulkheadConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimiterconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimiterConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cacheconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Registry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilienceregistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResilienceRegistry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrybudgetconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryBudgetConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrybudget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryBudget
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Context">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilience_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resilience_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shutdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shutdown()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_in_flight_count" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_in_flight_count()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable_in_flight_tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enable_in_flight_tracking()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health_checkregistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        health_check(registry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Presets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#http_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        http_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#db_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        db_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#queue_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        queue_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strict_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        strict_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Observability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jsoneventlogger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JsonEventLogger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metricscollector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MetricsCollector
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilienceevent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResilienceEvent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eventtype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EventType
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exceptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bulkheadfullerror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BulkheadFullError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimitexceedederror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimitExceededError
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#decorator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decorator
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Decorator">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resilient
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Classes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#retryconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#timeoutconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TimeoutConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitbreakerconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreakerConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#circuitbreaker-direct-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CircuitBreaker (direct usage)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallbackconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FallbackConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bulkheadconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BulkheadConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimiterconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimiterConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cacheconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Registry
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Registry">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilienceregistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResilienceRegistry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrybudgetconfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryBudgetConfig
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retrybudget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RetryBudget
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Context
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Context">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilience_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resilience_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shutdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        shutdown()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_in_flight_count" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_in_flight_count()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable_in_flight_tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        enable_in_flight_tracking()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health_checkregistry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        health_check(registry)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#presets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Presets
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Presets">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#http_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        http_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#db_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        db_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#queue_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        queue_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#strict_policykwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        strict_policy(**kwargs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Observability">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jsoneventlogger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JsonEventLogger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metricscollector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MetricsCollector
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Events">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resilienceevent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ResilienceEvent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eventtype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EventType
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#exceptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exceptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exceptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bulkheadfullerror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        BulkheadFullError
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimitexceedederror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimitExceededError
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<h2 id="decorator">Decorator<a class="headerlink" href="#decorator" title="Permanent link">&para;</a></h2>
+<h3 id="resilient"><code>resilient</code><a class="headerlink" href="#resilient" title="Permanent link">&para;</a></h3>
+<p>The main decorator that applies resilience patterns.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nd">@resilient</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">retry</span><span class="o">=</span><span class="n">RetryConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">timeout</span><span class="o">=</span><span class="n">TimeoutConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">circuit_breaker</span><span class="o">=</span><span class="n">CircuitBreakerConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">fallback</span><span class="o">=</span><span class="n">FallbackConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">bulkhead</span><span class="o">=</span><span class="n">BulkheadConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">rate_limiter</span><span class="o">=</span><span class="n">RateLimiterConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">cache</span><span class="o">=</span><span class="n">CacheConfig</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">listeners</span><span class="o">=</span><span class="p">[</span><span class="o">...</span><span class="p">],</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">)</span>
+</code></pre></div>
+<p>Can also be used bare: <code>@resilient</code> applies default retry (3 attempts).</p>
+<h2 id="configuration-classes">Configuration Classes<a class="headerlink" href="#configuration-classes" title="Permanent link">&para;</a></h2>
+<h3 id="retryconfig"><code>RetryConfig</code><a class="headerlink" href="#retryconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_attempts</code></td>
+<td><code>int</code></td>
+<td><code>3</code></td>
+<td>Maximum attempts including first call</td>
+</tr>
+<tr>
+<td><code>delay</code></td>
+<td><code>float</code></td>
+<td><code>1.0</code></td>
+<td>Initial delay in seconds</td>
+</tr>
+<tr>
+<td><code>backoff_factor</code></td>
+<td><code>float</code></td>
+<td><code>2.0</code></td>
+<td>Multiplier for delay after each retry</td>
+</tr>
+<tr>
+<td><code>max_delay</code></td>
+<td><code>float</code></td>
+<td><code>60.0</code></td>
+<td>Maximum delay cap</td>
+</tr>
+<tr>
+<td><code>jitter</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Add randomized jitter</td>
+</tr>
+<tr>
+<td><code>retry_on</code></td>
+<td><code>Sequence[Type]</code></td>
+<td><code>(Exception,)</code></td>
+<td>Exception types to retry</td>
+</tr>
+<tr>
+<td><code>retry_on_result</code></td>
+<td><code>Callable[[Any], bool]</code></td>
+<td><code>None</code></td>
+<td>Predicate to retry based on return value</td>
+</tr>
+</tbody>
+</table>
+<h3 id="timeoutconfig"><code>TimeoutConfig</code><a class="headerlink" href="#timeoutconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>seconds</code></td>
+<td><code>float</code></td>
+<td><code>30.0</code></td>
+<td>Timeout duration</td>
+</tr>
+<tr>
+<td><code>per_attempt</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Per-attempt timeout (<code>True</code>) or total deadline (<code>False</code>)</td>
+</tr>
+<tr>
+<td><code>pool_size</code></td>
+<td><code>int</code></td>
+<td><code>4</code></td>
+<td>Thread pool size for sync timeouts</td>
+</tr>
+</tbody>
+</table>
+<h3 id="circuitbreakerconfig"><code>CircuitBreakerConfig</code><a class="headerlink" href="#circuitbreakerconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>failure_threshold</code></td>
+<td><code>int</code></td>
+<td><code>5</code></td>
+<td>Failures before opening (consecutive count mode)</td>
+</tr>
+<tr>
+<td><code>recovery_timeout</code></td>
+<td><code>float</code></td>
+<td><code>30.0</code></td>
+<td>Seconds before half-open</td>
+</tr>
+<tr>
+<td><code>success_threshold</code></td>
+<td><code>int</code></td>
+<td><code>2</code></td>
+<td>Successes to close from half-open</td>
+</tr>
+<tr>
+<td><code>error_types</code></td>
+<td><code>Sequence[Type]</code></td>
+<td><code>(Exception,)</code></td>
+<td>Failures that count</td>
+</tr>
+<tr>
+<td><code>sliding_window_size</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Sliding window size (0 = consecutive count mode)</td>
+</tr>
+<tr>
+<td><code>failure_rate_threshold</code></td>
+<td><code>float</code></td>
+<td><code>0.5</code></td>
+<td>Failure rate to trip (sliding window mode)</td>
+</tr>
+<tr>
+<td><code>minimum_calls</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Min calls before evaluating thresholds</td>
+</tr>
+<tr>
+<td><code>slow_call_duration</code></td>
+<td><code>float</code></td>
+<td><code>0.0</code></td>
+<td>Slow call threshold in seconds (0 = disabled)</td>
+</tr>
+<tr>
+<td><code>slow_call_rate_threshold</code></td>
+<td><code>float</code></td>
+<td><code>1.0</code></td>
+<td>Slow call rate to trip the circuit</td>
+</tr>
+</tbody>
+</table>
+<h3 id="circuitbreaker-direct-usage"><code>CircuitBreaker</code> (direct usage)<a class="headerlink" href="#circuitbreaker-direct-usage" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow_request()</code></td>
+<td>Check if a call is allowed</td>
+</tr>
+<tr>
+<td><code>record_success()</code></td>
+<td>Record a successful call</td>
+</tr>
+<tr>
+<td><code>record_failure()</code></td>
+<td>Record a failed call</td>
+</tr>
+<tr>
+<td><code>reset()</code></td>
+<td>Reset to CLOSED state with zeroed counters</td>
+</tr>
+<tr>
+<td><code>force_open()</code></td>
+<td>Force transition to OPEN state</td>
+</tr>
+<tr>
+<td><code>force_close()</code></td>
+<td>Force transition to CLOSED state</td>
+</tr>
+<tr>
+<td><code>state</code></td>
+<td>Current <code>CircuitState</code></td>
+</tr>
+<tr>
+<td><code>metrics</code></td>
+<td>Real-time metrics dict (failure_rate, slow_call_rate, total_calls, state)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fallbackconfig"><code>FallbackConfig</code><a class="headerlink" href="#fallbackconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>handler</code></td>
+<td><code>Callable or Any</code></td>
+<td><code>None</code></td>
+<td>Fallback value, <code>fn(exc)</code>, or async <code>fn(exc)</code>. When <code>None</code>, <code>fallback_on</code> is auto-cleared to <code>()</code></td>
+</tr>
+<tr>
+<td><code>fallback_on</code></td>
+<td><code>Sequence[Type]</code></td>
+<td><code>(Exception,)</code></td>
+<td>Exceptions triggering fallback. Auto-cleared when <code>handler=None</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>FallbackConfig()</code> is safe to call with no arguments. The handler can be an async function when decorating async functions.</p>
+<h3 id="bulkheadconfig"><code>BulkheadConfig</code><a class="headerlink" href="#bulkheadconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_concurrent</code></td>
+<td><code>int</code></td>
+<td><code>10</code></td>
+<td>Max concurrent executions</td>
+</tr>
+<tr>
+<td><code>max_wait</code></td>
+<td><code>float</code></td>
+<td><code>0.0</code></td>
+<td>Max wait for slot (0=fail immediately)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ratelimiterconfig"><code>RateLimiterConfig</code><a class="headerlink" href="#ratelimiterconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_calls</code></td>
+<td><code>int</code></td>
+<td><code>10</code></td>
+<td>Max calls allowed per period</td>
+</tr>
+<tr>
+<td><code>period</code></td>
+<td><code>float</code></td>
+<td><code>1.0</code></td>
+<td>Time period in seconds</td>
+</tr>
+<tr>
+<td><code>max_wait</code></td>
+<td><code>float</code></td>
+<td><code>0.0</code></td>
+<td>Max wait for token (0=reject immediately)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cacheconfig"><code>CacheConfig</code><a class="headerlink" href="#cacheconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_size</code></td>
+<td><code>int</code></td>
+<td><code>256</code></td>
+<td>Max cached entries (LRU eviction)</td>
+</tr>
+<tr>
+<td><code>ttl</code></td>
+<td><code>float</code></td>
+<td><code>300.0</code></td>
+<td>Time-to-live in seconds (0=no expiration)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="registry">Registry<a class="headerlink" href="#registry" title="Permanent link">&para;</a></h2>
+<h3 id="resilienceregistry"><code>ResilienceRegistry</code><a class="headerlink" href="#resilienceregistry" title="Permanent link">&para;</a></h3>
+<p>Centralized management of named resilience configurations.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>register(name, config)</code></td>
+<td>Register a named config</td>
+</tr>
+<tr>
+<td><code>get(name)</code></td>
+<td>Get config by name (returns <code>None</code> if missing)</td>
+</tr>
+<tr>
+<td><code>get_or_default(name)</code></td>
+<td>Get config, fall back to default</td>
+</tr>
+<tr>
+<td><code>set_default(config)</code></td>
+<td>Set the default config</td>
+</tr>
+<tr>
+<td><code>decorator(name)</code></td>
+<td>Create a decorator using the named config</td>
+</tr>
+<tr>
+<td><code>unregister(name)</code></td>
+<td>Remove a named config</td>
+</tr>
+<tr>
+<td><code>clear()</code></td>
+<td>Remove all configs</td>
+</tr>
+<tr>
+<td><code>names</code></td>
+<td>List all registered names</td>
+</tr>
+</tbody>
+</table>
+<h3 id="retrybudgetconfig"><code>RetryBudgetConfig</code><a class="headerlink" href="#retrybudgetconfig" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_retries</code></td>
+<td><code>int</code></td>
+<td><code>100</code></td>
+<td>Maximum retry tokens in the budget pool</td>
+</tr>
+<tr>
+<td><code>refill_rate</code></td>
+<td><code>float</code></td>
+<td><code>10</code></td>
+<td>Tokens refilled per second</td>
+</tr>
+</tbody>
+</table>
+<h3 id="retrybudget"><code>RetryBudget</code><a class="headerlink" href="#retrybudget" title="Permanent link">&para;</a></h3>
+<p>Shared retry budget instance. Created with <code>RetryBudget(RetryBudgetConfig(...))</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>acquire()</code></td>
+<td>Consume a retry token. Returns <code>True</code> if granted, <code>False</code> if exhausted</td>
+</tr>
+<tr>
+<td><code>available</code></td>
+<td>Number of tokens currently available</td>
+</tr>
+</tbody>
+</table>
+<h2 id="context">Context<a class="headerlink" href="#context" title="Permanent link">&para;</a></h2>
+<h3 id="resilience_context"><code>resilience_context</code><a class="headerlink" href="#resilience_context" title="Permanent link">&para;</a></h3>
+<p>A <code>contextvars.ContextVar[Optional[dict]]</code> that carries request-scoped metadata into every <code>ResilienceEvent.context</code> field.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyresilience</span><span class="w"> </span><span class="kn">import</span> <span class="n">resilience_context</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">resilience_context</span><span class="o">.</span><span class="n">set</span><span class="p">({</span><span class="s2">&quot;trace_id&quot;</span><span class="p">:</span> <span class="s2">&quot;abc-123&quot;</span><span class="p">})</span>
+</code></pre></div>
+<h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Permanent link">&para;</a></h2>
+<h3 id="shutdown"><code>shutdown()</code><a class="headerlink" href="#shutdown" title="Permanent link">&para;</a></h3>
+<p>Drains in-flight calls and releases thread pool resources. Call during application shutdown.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyresilience</span><span class="w"> </span><span class="kn">import</span> <span class="n">shutdown</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">shutdown</span><span class="p">()</span>
+</code></pre></div>
+<h3 id="get_in_flight_count"><code>get_in_flight_count()</code><a class="headerlink" href="#get_in_flight_count" title="Permanent link">&para;</a></h3>
+<p>Returns the number of currently executing resilient calls. Requires <code>enable_in_flight_tracking()</code> to be called first.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyresilience</span><span class="w"> </span><span class="kn">import</span> <span class="n">enable_in_flight_tracking</span><span class="p">,</span> <span class="n">get_in_flight_count</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">enable_in_flight_tracking</span><span class="p">()</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># ... after some calls are in progress ...</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">count</span> <span class="o">=</span> <span class="n">get_in_flight_count</span><span class="p">()</span>
+</code></pre></div>
+<h3 id="enable_in_flight_tracking"><code>enable_in_flight_tracking()</code><a class="headerlink" href="#enable_in_flight_tracking" title="Permanent link">&para;</a></h3>
+<p>Activates in-flight call counting. Disabled by default to avoid overhead. Once enabled, <code>get_in_flight_count()</code> returns accurate counts.</p>
+<h3 id="health_checkregistry"><code>health_check(registry)</code><a class="headerlink" href="#health_checkregistry" title="Permanent link">&para;</a></h3>
+<p>Returns a dict summarizing resilience state for all registered functions in a <code>ResilienceRegistry</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pyresilience</span><span class="w"> </span><span class="kn">import</span> <span class="n">ResilienceRegistry</span><span class="p">,</span> <span class="n">health_check</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">status</span> <span class="o">=</span> <span class="n">health_check</span><span class="p">(</span><span class="n">registry</span><span class="p">)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># {&quot;payment-api&quot;: {&quot;circuit_breaker&quot;: &quot;closed&quot;, &quot;in_flight&quot;: 3, ...}, ...}</span>
+</code></pre></div>
+<h2 id="presets">Presets<a class="headerlink" href="#presets" title="Permanent link">&para;</a></h2>
+<h3 id="http_policykwargs"><code>http_policy(**kwargs)</code><a class="headerlink" href="#http_policykwargs" title="Permanent link">&para;</a></h3>
+<p>Optimized for HTTP API calls: 10s timeout, 3 retries, circuit breaker at 5 failures.</p>
+<h3 id="db_policykwargs"><code>db_policy(**kwargs)</code><a class="headerlink" href="#db_policykwargs" title="Permanent link">&para;</a></h3>
+<p>Optimized for database calls: 30s timeout, 2 retries, bulkhead of 10, circuit at 3 failures.</p>
+<h3 id="queue_policykwargs"><code>queue_policy(**kwargs)</code><a class="headerlink" href="#queue_policykwargs" title="Permanent link">&para;</a></h3>
+<p>Optimized for message queues: 15s timeout, 5 retries, circuit at 10 failures.</p>
+<h3 id="strict_policykwargs"><code>strict_policy(**kwargs)</code><a class="headerlink" href="#strict_policykwargs" title="Permanent link">&para;</a></h3>
+<p>Fail-fast policy: 5s timeout, 1 retry, no jitter.</p>
+<h2 id="observability">Observability<a class="headerlink" href="#observability" title="Permanent link">&para;</a></h2>
+<h3 id="jsoneventlogger"><code>JsonEventLogger</code><a class="headerlink" href="#jsoneventlogger" title="Permanent link">&para;</a></h3>
+<p><code>ResilienceListener</code> that emits structured JSON log lines. Uses <code>orjson</code> if available, falls back to stdlib <code>json</code>.</p>
+<h3 id="metricscollector"><code>MetricsCollector</code><a class="headerlink" href="#metricscollector" title="Permanent link">&para;</a></h3>
+<p>In-memory metrics collector.</p>
+<table>
+<thead>
+<tr>
+<th>Method/Property</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>summary()</code></td>
+<td>Overall metrics dict</td>
+</tr>
+<tr>
+<td><code>get_counts(function_name=None)</code></td>
+<td>Event counts</td>
+</tr>
+<tr>
+<td><code>get_latencies(function_name=None)</code></td>
+<td>Latency percentiles</td>
+</tr>
+<tr>
+<td><code>reset()</code></td>
+<td>Reset all metrics</td>
+</tr>
+</tbody>
+</table>
+<h2 id="events">Events<a class="headerlink" href="#events" title="Permanent link">&para;</a></h2>
+<h3 id="resilienceevent"><code>ResilienceEvent</code><a class="headerlink" href="#resilienceevent" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>event_type</code></td>
+<td><code>EventType</code></td>
+<td>Type of event</td>
+</tr>
+<tr>
+<td><code>function_name</code></td>
+<td><code>str</code></td>
+<td>Decorated function name</td>
+</tr>
+<tr>
+<td><code>attempt</code></td>
+<td><code>int</code></td>
+<td>Current attempt number</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><code>BaseException?</code></td>
+<td>The exception, if any</td>
+</tr>
+<tr>
+<td><code>detail</code></td>
+<td><code>str</code></td>
+<td>Additional detail</td>
+</tr>
+<tr>
+<td><code>context</code></td>
+<td><code>Optional[dict]</code></td>
+<td>Request-scoped metadata from <code>resilience_context</code></td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td><code>Optional[float]</code></td>
+<td>Call duration in seconds (set on SUCCESS events)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="eventtype"><code>EventType</code><a class="headerlink" href="#eventtype" title="Permanent link">&para;</a></h3>
+<p><code>RETRY</code>, <code>RETRY_EXHAUSTED</code>, <code>TIMEOUT</code>, <code>CIRCUIT_OPEN</code>, <code>CIRCUIT_HALF_OPEN</code>, <code>CIRCUIT_CLOSED</code>, <code>FALLBACK_USED</code>, <code>BULKHEAD_REJECTED</code>, <code>RATE_LIMITED</code>, <code>CACHE_HIT</code>, <code>CACHE_MISS</code>, <code>SUCCESS</code>, <code>FAILURE</code>, <code>SLOW_CALL</code></p>
+<h2 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h2>
+<h3 id="bulkheadfullerror"><code>BulkheadFullError</code><a class="headerlink" href="#bulkheadfullerror" title="Permanent link">&para;</a></h3>
+<p>Raised when the bulkhead has no available slots and <code>max_wait</code> is exceeded.</p>
+<h3 id="ratelimitexceedederror"><code>RateLimitExceededError</code><a class="headerlink" href="#ratelimitexceedederror" title="Permanent link">&para;</a></h3>
+<p>Raised when the rate limiter rejects a call (no tokens available and <code>max_wait</code> exceeded).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.tabs.link", "navigation.sections", "navigation.expand", "navigation.top", "navigation.indexes", "search.highlight", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
