@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.4.0 (2026-06-12)
+
+### New Features
+- **`ignore_on`**: `RetryConfig.ignore_on` and `CircuitBreakerConfig.ignore_on` list exception types that are never retried and never counted as circuit failures — takes precedence over `retry_on`/`error_types` and bypasses fallback, so terminal client errors (auth, quota, validation) fail fast
+- **`delay_func`**: `RetryConfig.delay_func` computes the per-attempt delay from the triggering exception or `retry_on_result` value; return `None` to fall back to exponential backoff. Returns are clamped to `[0, max_delay]`
+- **`pyresilience.contrib.http`**: stdlib-only helpers, duck-typed for requests/httpx/aiohttp — `retry_on_status()` predicate for `retry_on_result`, and `retry_after_delay()` which parses `Retry-After` headers (delta-seconds and HTTP-date) from responses or exceptions carrying `.response`
+- **`llm_policy()` preset**: client-side rate limiter + 429-aware, `Retry-After`-honoring retry + timeout + circuit breaker tuned for LLM/HTTP APIs; exported from the package root
+
+### Performance
+- New config fields cost ≤ +0.07μs on the retry happy path; two new `bench_overhead.py` cases track `ignore_on`/`delay_func` overhead permanently
+
+### Tests
+- 452 tests (up from 392), 96% branch coverage
+- New `tests/test_contrib_http.py` including a source-level guard that `contrib/http.py` imports no third-party HTTP library
+
+---
+
 ## v0.3.1 (2026-03-19)
 
 ### New Features
