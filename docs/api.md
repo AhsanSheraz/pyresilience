@@ -34,6 +34,8 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `jitter` | `bool` | `True` | Add randomized jitter |
 | `retry_on` | `Sequence[Type]` | `(Exception,)` | Exception types to retry |
 | `retry_on_result` | `Callable[[Any], bool]` | `None` | Predicate to retry based on return value |
+| `ignore_on` | `Sequence[Type]` | `()` | Exception types never retried; takes precedence over `retry_on` |
+| `delay_func` | `Callable[[int, Any], Optional[float]]` | `None` | Dynamic per-attempt delay from the triggering exception/result; `None` return falls back to exponential backoff |
 
 ### `TimeoutConfig`
 
@@ -56,6 +58,7 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `minimum_calls` | `int` | `0` | Min calls before evaluating thresholds |
 | `slow_call_duration` | `float` | `0.0` | Slow call threshold in seconds (0 = disabled) |
 | `slow_call_rate_threshold` | `float` | `1.0` | Slow call rate to trip the circuit |
+| `ignore_on` | `Sequence[Type]` | `()` | Exception types never counted as failures; takes precedence over `error_types` |
 
 ### `CircuitBreaker` (direct usage)
 
@@ -202,6 +205,28 @@ Optimized for message queues: 15s timeout, 5 retries, circuit at 10 failures.
 ### `strict_policy(**kwargs)`
 
 Fail-fast policy: 5s timeout, 1 retry, no jitter.
+
+### `llm_policy(**kwargs)`
+
+Optimized for LLM / HTTP API calls: 60s timeout, 4 attempts with 429-aware `Retry-After`-honoring
+backoff, client-side rate limiter (60 calls/60s), circuit breaker at 5 failures. See
+[HTTP & LLM Helpers](advanced/http.md).
+
+## contrib.http
+
+Stdlib-only helpers in `pyresilience.contrib.http` (not re-exported from the package root):
+
+### `retry_on_status(*codes)`
+
+Returns a predicate for `RetryConfig.retry_on_result`. Duck-typed: matches integer `status_code`
+(requests/httpx) or `status` (aiohttp) attributes against `codes`.
+
+### `retry_after_delay(max_wait=60.0)`
+
+Returns a `delay_func` for `RetryConfig.delay_func`. Parses the `Retry-After` header
+(delta-seconds and HTTP-date forms) from the triggering response or from an exception carrying
+a `.response` attribute; returns `None` (exponential backoff fallback) when absent or
+unparseable; result is clamped to `[0, max_wait]`.
 
 ## Observability
 

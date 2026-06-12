@@ -37,6 +37,16 @@ def with_retry_only() -> int:
     return 42
 
 
+@resilient(retry=RetryConfig(max_attempts=3, ignore_on=(ValueError, KeyError)))
+def with_retry_ignore_on() -> int:
+    return 42
+
+
+@resilient(retry=RetryConfig(max_attempts=3, delay_func=lambda attempt, trigger: 0.0))
+def with_retry_delay_func() -> int:
+    return 42
+
+
 @resilient(
     retry=RetryConfig(max_attempts=3),
     timeout=TimeoutConfig(seconds=30),
@@ -94,6 +104,8 @@ def main() -> None:
         ("bare function (baseline)", bare_function, {}),
         ("@resilient (default retry)", with_default_retry, {}),
         ("retry only", with_retry_only, {}),
+        ("retry + ignore_on (happy path)", with_retry_ignore_on, {}),
+        ("retry + delay_func (happy path)", with_retry_delay_func, {}),
         ("retry + timeout", with_retry_timeout, {}),
         ("retry + circuit breaker", with_retry_circuit, {}),
         ("all patterns (no cache)", with_all_patterns, {}),
