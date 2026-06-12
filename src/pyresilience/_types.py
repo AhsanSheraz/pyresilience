@@ -66,6 +66,14 @@ class RetryConfig:
         retry_on_result: Optional predicate function that receives the result and
             returns True if the call should be retried. Useful for retrying on
             specific return values (e.g., HTTP 429 responses) without raising exceptions.
+        ignore_on: Exception types that are never retried, even if they match retry_on.
+            Takes precedence over retry_on. Useful for terminal client errors
+            (auth, quota, validation).
+        delay_func: Optional callable (attempt, trigger) -> delay seconds or None.
+            trigger is the raised exception (exception-driven retries) or the raw
+            retry_on_result value (result-driven retries). Return None to fall back to
+            exponential backoff. Non-None returns are clamped to [0, max_delay].
+            Enables honoring HTTP Retry-After.
     """
 
     max_attempts: int = 3
@@ -75,6 +83,8 @@ class RetryConfig:
     jitter: bool = True
     retry_on: Sequence[Type[BaseException]] = (Exception,)
     retry_on_result: Optional[Callable[[Any], bool]] = None
+    ignore_on: Sequence[Type[BaseException]] = ()
+    delay_func: Optional[Callable[[int, Union[BaseException, Any]], Optional[float]]] = None
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -131,6 +141,8 @@ class CircuitBreakerConfig:
             0.0 disables slow call detection.
         slow_call_rate_threshold: Rate of slow calls (0.0-1.0) that triggers opening.
             E.g., 0.5 means "open when 50% of calls are slow".
+        ignore_on: Exception types that never count as circuit failures, even if they
+            match error_types. Takes precedence over error_types.
     """
 
     failure_threshold: int = 5
@@ -142,6 +154,7 @@ class CircuitBreakerConfig:
     minimum_calls: int = 0
     slow_call_duration: float = 0.0
     slow_call_rate_threshold: float = 1.0
+    ignore_on: Sequence[Type[BaseException]] = ()
 
     def __post_init__(self) -> None:
         if self.failure_threshold < 1:
