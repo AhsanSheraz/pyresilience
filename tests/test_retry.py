@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from pyresilience import EventType, ResilienceEvent, RetryConfig, resilient
+from pyresilience import (
+    EventType,
+    FallbackConfig,
+    ResilienceEvent,
+    RetryConfig,
+    resilient,
+)
 
 
 class TestRetrySync:
@@ -122,7 +128,7 @@ class TestRetryAsync:
 
 class TestBareDecorator:
     def test_bare_decorator_no_retry(self) -> None:
-        """Bare @resilient is a passthrough — no patterns enabled."""
+        """Bare @resilient is a passthrough - no patterns enabled."""
         call_count = 0
 
         @resilient
@@ -208,6 +214,235 @@ class TestSyncRetryOnResultRetries:
         assert result == "bad"
         event_types = [e.event_type for e in events]
         assert EventType.RETRY_EXHAUSTED in event_types
+
+
+class TestRetryIgnoreOn:
+    def test_ignore_on_exception_raises_immediately(self) -> None:
+        """ignore_on exception raises verbatim on first attempt, no retry."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]))
+        def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            fails_with_ignored_error()
+        assert call_count == 1
+
+    def test_ignore_on_takes_precedence_over_retry_on(self) -> None:
+        """When class is in both ignore_on and retry_on, it is ignored."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.01,
+                retry_on=[ValueError],
+                ignore_on=[ValueError],
+            )
+        )
+        def fails_with_both() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("should not retry")
+
+        with pytest.raises(ValueError, match="should not retry"):
+            fails_with_both()
+        assert call_count == 1
+
+    def test_ignore_on_bypasses_fallback(self) -> None:
+        """ignore_on exception is never caught by fallback_on handler."""
+        call_count = 0
+        fallback_calls = []
+
+        def fallback_handler(e: BaseException) -> str:
+            fallback_calls.append(e)
+            return "fallback"
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]),
+            fallback=FallbackConfig(
+                handler=fallback_handler,
+                fallback_on=[ValueError],
+            ),
+        )
+        def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            fails_with_ignored_error()
+        assert call_count == 1
+        assert len(fallback_calls) == 0
+
+    def test_ignore_on_exception_emits_single_failure_event(self) -> None:
+        """ignore_on exception emits exactly one FAILURE event, no RETRY."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]),
+            listeners=[events.append],
+        )
+        def fails_with_ignored_error() -> str:
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            fails_with_ignored_error()
+
+        event_types = [e.event_type for e in events]
+        failure_events = [e for e in events if e.event_type == EventType.FAILURE]
+        assert len(failure_events) == 1
+        assert failure_events[0].attempt == 1
+        assert isinstance(failure_events[0].error, ValueError)
+        assert EventType.RETRY not in event_types
+
+    def test_ignore_on_empty_tuple_allows_retry(self) -> None:
+        """ignore_on=() (default) allows normal retry behavior."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, jitter=False, ignore_on=()))
+        def fails_twice() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("not yet")
+            return "ok"
+
+        result = fails_twice()
+        assert result == "ok"
+        assert call_count == 3
+
+    def test_ignore_on_non_matching_uses_retry(self) -> None:
+        """When raised exception doesn't match ignore_on, normal retry applies."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[KeyError]))
+        def fails_with_value_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("not ignored")
+            return "ok"
+
+        result = fails_with_value_error()
+        assert result == "ok"
+        assert call_count == 3
+
+
+class TestRetryIgnoreOnAsync:
+    async def test_ignore_on_exception_raises_immediately(self) -> None:
+        """ignore_on exception raises verbatim on first attempt, no retry."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]))
+        async def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            await fails_with_ignored_error()
+        assert call_count == 1
+
+    async def test_ignore_on_takes_precedence_over_retry_on(self) -> None:
+        """When class is in both ignore_on and retry_on, it is ignored."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.01,
+                retry_on=[ValueError],
+                ignore_on=[ValueError],
+            )
+        )
+        async def fails_with_both() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("should not retry")
+
+        with pytest.raises(ValueError, match="should not retry"):
+            await fails_with_both()
+        assert call_count == 1
+
+    async def test_ignore_on_bypasses_fallback(self) -> None:
+        """ignore_on exception is never caught by fallback_on handler."""
+        call_count = 0
+
+        def fallback_handler(e: BaseException) -> str:
+            return "fallback"
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]),
+            fallback=FallbackConfig(
+                handler=fallback_handler,
+                fallback_on=[ValueError],
+            ),
+        )
+        async def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            await fails_with_ignored_error()
+        assert call_count == 1
+
+    async def test_ignore_on_exception_emits_single_failure_event(self) -> None:
+        """ignore_on exception emits exactly one FAILURE event, no RETRY."""
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[ValueError]),
+            listeners=[events.append],
+        )
+        async def fails_with_ignored_error() -> str:
+            raise ValueError("ignored error")
+
+        with pytest.raises(ValueError, match="ignored error"):
+            await fails_with_ignored_error()
+
+        event_types = [e.event_type for e in events]
+        failure_events = [e for e in events if e.event_type == EventType.FAILURE]
+        assert len(failure_events) == 1
+        assert failure_events[0].attempt == 1
+        assert isinstance(failure_events[0].error, ValueError)
+        assert EventType.RETRY not in event_types
+
+    async def test_ignore_on_empty_tuple_allows_retry(self) -> None:
+        """ignore_on=() (default) allows normal retry behavior."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, jitter=False, ignore_on=()))
+        async def fails_twice() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("not yet")
+            return "ok"
+
+        result = await fails_twice()
+        assert result == "ok"
+        assert call_count == 3
+
+    async def test_ignore_on_non_matching_uses_retry(self) -> None:
+        """When raised exception doesn't match ignore_on, normal retry applies."""
+        call_count = 0
+
+        @resilient(retry=RetryConfig(max_attempts=3, delay=0.01, ignore_on=[KeyError]))
+        async def fails_with_value_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("not ignored")
+            return "ok"
+
+        result = await fails_with_value_error()
+        assert result == "ok"
+        assert call_count == 3
 
 
 class TestRetryConfigValidation:

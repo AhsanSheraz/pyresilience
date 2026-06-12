@@ -468,7 +468,11 @@ class _SyncExecutor:
                 )
             return result
         except Exception as exc:
-            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+            if (
+                circuit_breaker is not None
+                and isinstance(exc, self._circuit_error_types)
+                and not (self._circuit_ignore_on and isinstance(exc, self._circuit_ignore_on))
+            ):
                 new_state = circuit_breaker.record_failure(0.0)
                 if new_state == CircuitState.OPEN and has_listeners:
                     _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
@@ -1001,7 +1005,11 @@ class _AsyncExecutor:
                 )
             return result
         except Exception as exc:
-            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+            if (
+                circuit_breaker is not None
+                and isinstance(exc, self._circuit_error_types)
+                and not (self._circuit_ignore_on and isinstance(exc, self._circuit_ignore_on))
+            ):
                 new_state = circuit_breaker.record_failure(0.0)
                 if new_state == CircuitState.OPEN and has_listeners:
                     _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
