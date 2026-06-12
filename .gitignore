@@ -76,6 +76,9 @@ dmypy.txt
 # mkdocs
 site/
 
+# uv
+uv.lock
+
 # OS
 .DS_Store
 Thumbs.db
