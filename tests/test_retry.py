@@ -457,3 +457,437 @@ class TestRetryConfigValidation:
     def test_max_delay_must_be_non_negative(self) -> None:
         with pytest.raises(ValueError, match="max_delay must be >= 0"):
             RetryConfig(max_delay=-1)
+
+
+class TestRetryDelayFunc:
+    def test_custom_delay_honored(self) -> None:
+        """Custom delay_func return value overrides exponential backoff."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=10.0,
+                jitter=False,
+                delay_func=lambda a, t: 0.05,
+            )
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed >= 0.04  # Windows timer tolerance
+        assert elapsed < 5.0  # Proves 10s base delay was overridden
+
+    def test_none_return_falls_back_to_backoff(self) -> None:
+        """delay_func returning None falls back to exponential backoff."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                delay_func=lambda a, t: None,
+            )
+        )
+        def fails_twice() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_twice()
+        assert result == "ok"
+        assert call_count == 3
+
+    def test_trigger_is_exception_instance(self) -> None:
+        """delay_func receives the raised exception as trigger."""
+        triggers_received: list[BaseException | None] = []
+        exc_instance = ValueError("specific")
+        call_count = 0
+
+        def capture_trigger(attempt: int, trigger: BaseException | None) -> float | None:
+            triggers_received.append(trigger)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.001,
+                jitter=False,
+                delay_func=capture_trigger,
+            )
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise exc_instance
+            return "ok"
+
+        result = fails_once()
+        assert result == "ok"
+        assert len(triggers_received) == 1
+        assert triggers_received[0] is exc_instance
+
+    def test_trigger_is_raw_result_on_retry_on_result(self) -> None:
+        """delay_func receives raw result (including falsy values) on
+        retry_on_result retries."""
+        triggers_received: list[object] = []
+
+        def capture_trigger(attempt: int, trigger: object) -> float | None:
+            triggers_received.append(trigger)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                retry_on_result=lambda r: r is None,
+                delay_func=capture_trigger,
+            )
+        )
+        def returns_none_then_ok() -> str | None:
+            if len(triggers_received) == 0:
+                return None
+            return "ok"
+
+        result = returns_none_then_ok()
+        assert result == "ok"
+        assert len(triggers_received) == 1
+        assert triggers_received[0] is None
+
+    def test_attempt_numbers(self) -> None:
+        """delay_func receives correct 1-based attempt numbers."""
+        attempts_received: list[int] = []
+
+        def capture_attempt(attempt: int, trigger: object) -> float | None:
+            attempts_received.append(attempt)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                delay_func=capture_attempt,
+            )
+        )
+        def fails_twice() -> str:
+            if len(attempts_received) < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_twice()
+        assert result == "ok"
+        assert attempts_received == [1, 2]
+
+    def test_negative_return_clamped_to_zero(self) -> None:
+        """delay_func returning negative value is clamped to 0."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.1,
+                jitter=False,
+                delay_func=lambda a, t: -5.0,
+            )
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed < 0.5  # Proves negative was clamped to 0
+
+    def test_return_clamped_to_max_delay(self) -> None:
+        """delay_func returning value above max_delay is clamped."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.01,
+                max_delay=0.05,
+                jitter=False,
+                delay_func=lambda a, t: 999.0,
+            )
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed >= 0.04  # Windows timer tolerance
+        assert elapsed < 2.0  # Proves 999s was clamped to max_delay
+
+    def test_no_delay_func_behaves_as_before(self) -> None:
+        """When delay_func is not set, behavior is identical to before."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.001,
+                jitter=False,
+            )
+        )
+        def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = fails_once()
+        assert result == "ok"
+        assert call_count == 2
+
+
+class TestRetryDelayFuncAsync:
+    async def test_custom_delay_honored(self) -> None:
+        """Custom delay_func return value overrides exponential backoff."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=10.0,
+                jitter=False,
+                delay_func=lambda a, t: 0.05,
+            )
+        )
+        async def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed >= 0.04  # Windows timer tolerance
+        assert elapsed < 5.0  # Proves 10s base delay was overridden
+
+    async def test_none_return_falls_back_to_backoff(self) -> None:
+        """delay_func returning None falls back to exponential backoff."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                delay_func=lambda a, t: None,
+            )
+        )
+        async def fails_twice() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_twice()
+        assert result == "ok"
+        assert call_count == 3
+
+    async def test_trigger_is_exception_instance(self) -> None:
+        """delay_func receives the raised exception as trigger."""
+        triggers_received: list[BaseException | None] = []
+        exc_instance = ValueError("specific")
+        call_count = 0
+
+        def capture_trigger(attempt: int, trigger: BaseException | None) -> float | None:
+            triggers_received.append(trigger)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.001,
+                jitter=False,
+                delay_func=capture_trigger,
+            )
+        )
+        async def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise exc_instance
+            return "ok"
+
+        result = await fails_once()
+        assert result == "ok"
+        assert len(triggers_received) == 1
+        assert triggers_received[0] is exc_instance
+
+    async def test_trigger_is_raw_result_on_retry_on_result(self) -> None:
+        """delay_func receives raw result (including falsy values) on
+        retry_on_result retries."""
+        triggers_received: list[object] = []
+
+        def capture_trigger(attempt: int, trigger: object) -> float | None:
+            triggers_received.append(trigger)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                retry_on_result=lambda r: r is None,
+                delay_func=capture_trigger,
+            )
+        )
+        async def returns_none_then_ok() -> str | None:
+            if len(triggers_received) == 0:
+                return None
+            return "ok"
+
+        result = await returns_none_then_ok()
+        assert result == "ok"
+        assert len(triggers_received) == 1
+        assert triggers_received[0] is None
+
+    async def test_attempt_numbers(self) -> None:
+        """delay_func receives correct 1-based attempt numbers."""
+        attempts_received: list[int] = []
+
+        def capture_attempt(attempt: int, trigger: object) -> float | None:
+            attempts_received.append(attempt)
+            return 0.001
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=3,
+                delay=0.001,
+                jitter=False,
+                delay_func=capture_attempt,
+            )
+        )
+        async def fails_twice() -> str:
+            if len(attempts_received) < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_twice()
+        assert result == "ok"
+        assert attempts_received == [1, 2]
+
+    async def test_negative_return_clamped_to_zero(self) -> None:
+        """delay_func returning negative value is clamped to 0."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.1,
+                jitter=False,
+                delay_func=lambda a, t: -5.0,
+            )
+        )
+        async def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed < 0.5  # Proves negative was clamped to 0
+
+    async def test_return_clamped_to_max_delay(self) -> None:
+        """delay_func returning value above max_delay is clamped."""
+        import time
+
+        call_count = 0
+        start = time.monotonic()
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.01,
+                max_delay=0.05,
+                jitter=False,
+                delay_func=lambda a, t: 999.0,
+            )
+        )
+        async def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_once()
+        elapsed = time.monotonic() - start
+        assert result == "ok"
+        assert call_count == 2
+        assert elapsed >= 0.04  # Windows timer tolerance
+        assert elapsed < 2.0  # Proves 999s was clamped to max_delay
+
+    async def test_no_delay_func_behaves_as_before(self) -> None:
+        """When delay_func is not set, behavior is identical to before."""
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=2,
+                delay=0.001,
+                jitter=False,
+            )
+        )
+        async def fails_once() -> str:
+            nonlocal call_count
+            call_count += 1
+            if call_count < 2:
+                raise ValueError("fail")
+            return "ok"
+
+        result = await fails_once()
+        assert result == "ok"
+        assert call_count == 2
