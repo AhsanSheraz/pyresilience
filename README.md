@@ -104,7 +104,7 @@ Skip the configuration for common use cases:
 
 ```python
 from pyresilience import resilient
-from pyresilience import http_policy, db_policy, queue_policy, strict_policy
+from pyresilience import http_policy, db_policy, queue_policy, strict_policy, llm_policy
 
 @resilient(**http_policy())       # 10s timeout, 3 retries, circuit breaker
 def call_api(): ...
@@ -117,6 +117,28 @@ async def publish_message(): ...
 
 @resilient(**strict_policy())     # 5s timeout, 1 retry, fail fast
 def latency_critical(): ...
+
+@resilient(**llm_policy())        # 429-aware retry honoring Retry-After + client-side rate limit
+def ask_model(): ...
+```
+
+### HTTP 429 / Retry-After out of the box
+
+Calling OpenAI, Anthropic, Stripe, or GitHub APIs? pyresilience handles rate limits natively —
+no hand-rolled wait strategies:
+
+```python
+from pyresilience import resilient, RetryConfig
+from pyresilience.contrib.http import retry_on_status, retry_after_delay
+
+@resilient(retry=RetryConfig(
+    max_attempts=4,
+    retry_on_result=retry_on_status(429, 503),    # retry these statuses (requests/httpx/aiohttp)
+    delay_func=retry_after_delay(max_wait=60.0),  # wait exactly what Retry-After asks
+    ignore_on=(PermissionError,),                 # terminal errors: never retried
+))
+def call_api():
+    return requests.get("https://api.example.com/data")
 ```
 
 ## Observability
@@ -279,6 +301,7 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 | Rate Limiter | Yes | - | - | - | - |
 | Cache | Yes | - | - | - | - |
 | Retry Budget | Yes | - | - | - | - |
+| 429 + Retry-After handling | Yes | - | - | - | - |
 | Context Propagation | Yes | - | - | - | - |
 | Health Check | Yes | - | - | - | - |
 | Prometheus | Yes | - | - | - | - |
