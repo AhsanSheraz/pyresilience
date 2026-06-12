@@ -109,6 +109,47 @@ def cache_lookup(key: str) -> dict:
 | Circuit recovery | 60s | Standard recovery |
 | Jitter | No | Deterministic for debugging |
 
+### `llm_policy()`
+
+Optimized for LLM and rate-limited HTTP APIs (OpenAI, Anthropic, Stripe, GitHub, ...) — retries
+on 429/5xx responses, honors the server's `Retry-After` header, and throttles client-side so you
+hit the rate limit less often in the first place.
+
+```python
+from pyresilience import resilient, llm_policy
+
+@resilient(**llm_policy())
+def ask_model(prompt: str):
+    return client.chat.completions.create(model="...", messages=[...])
+```
+
+| Parameter | Default | Why |
+|-----------|---------|-----|
+| Timeout | 60s | LLM responses can be slow |
+| Max attempts | 4 | Rate limits usually clear within a few retries |
+| Retry delay | 1.0s | Base for exponential backoff when no `Retry-After` is present |
+| Retry on status | 429, 500, 502, 503, 504 | Retries these response codes via `retry_on_status()` |
+| `Retry-After` handling | On, capped at 60s | `retry_after_delay()` parses the header; falls back to backoff |
+| Rate limiter | 60 calls / 60s | Client-side smoothing to avoid 429s proactively |
+| Circuit failure threshold | 5 | Stop hammering a failing provider |
+| Circuit recovery | 30s | Re-probe after a short cool-down |
+
+**Customizable:**
+
+```python
+@resilient(**llm_policy(
+    max_calls=500, period=60.0,                  # paid-tier rate limits
+    retry_on_status_codes=(429,),                # only retry rate limits
+    ignore_on=(AuthError, QuotaExceededError),   # terminal errors: no retry, no circuit failure
+    max_concurrent=8,                            # optional bulkhead
+))
+def ask_model(prompt: str): ...
+```
+
+`ignore_on` propagates to **both** the retry and the circuit breaker configs — terminal client
+errors fail fast and don't trip the circuit. See [HTTP & LLM Helpers](http.md) for the underlying
+`retry_on_status()` / `retry_after_delay()` building blocks.
+
 ## Custom Presets
 
 Create your own presets following the same pattern:

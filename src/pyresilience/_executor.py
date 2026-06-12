@@ -22,7 +22,7 @@ import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional, Type, Union
 
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead
 from pyresilience._cache import _SENTINEL, AsyncResultCache, ResultCache
@@ -239,11 +239,14 @@ class _SyncExecutor:
         "_cache",
         "_circuit_breaker",
         "_circuit_error_types",
+        "_circuit_ignore_on",
+        "_delay_func",
         "_fallback_cfg",
         "_fallback_on",
         "_fast_path",
         "_has_listeners",
         "_has_timeout",
+        "_ignore_on",
         "_listeners",
         "_max_attempts",
         "_rate_limiter",
@@ -270,6 +273,15 @@ class _SyncExecutor:
         )
         self._fallback_on: tuple[Type[BaseException], ...] = (
             tuple(config.fallback.fallback_on) if config.fallback else ()
+        )
+        self._ignore_on: tuple[Type[BaseException], ...] = (
+            tuple(config.retry.ignore_on) if config.retry else ()
+        )
+        self._circuit_ignore_on: tuple[Type[BaseException], ...] = (
+            tuple(config.circuit_breaker.ignore_on) if config.circuit_breaker else ()
+        )
+        self._delay_func: Optional[Callable[[int, Any], Optional[float]]] = (
+            config.retry.delay_func if config.retry else None
         )
         self._retry_cfg = config.retry
         self._fallback_cfg = config.fallback
@@ -456,7 +468,11 @@ class _SyncExecutor:
                 )
             return result
         except Exception as exc:
-            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+            if (
+                circuit_breaker is not None
+                and isinstance(exc, self._circuit_error_types)
+                and not (self._circuit_ignore_on and isinstance(exc, self._circuit_ignore_on))
+            ):
                 new_state = circuit_breaker.record_failure(0.0)
                 if new_state == CircuitState.OPEN and has_listeners:
                     _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
@@ -467,6 +483,24 @@ class _SyncExecutor:
             if has_listeners:
                 _emit(listeners, EventType.FAILURE, func_name, error=exc)
             raise
+
+    def _resolve_delay(self, attempt: int, trigger: Union[BaseException, Any]) -> float:
+        """Compute retry delay, honouring custom delay_func when set.
+
+        Returns 0.0 for negative custom values; clamps to max_delay.
+        Falls back to _compute_delay when delay_func is absent or returns None.
+        """
+        delay_func = self._delay_func
+        if delay_func is not None:
+            custom = delay_func(attempt, trigger)
+            if custom is not None:
+                if custom < 0:
+                    return 0.0
+                max_delay = self._retry_cfg.max_delay  # type: ignore[union-attr]
+                if custom > max_delay:
+                    return max_delay
+                return custom
+        return _compute_delay(self._retry_cfg, attempt)  # type: ignore[arg-type]
 
     def _execute_with_retry(
         self,
@@ -483,7 +517,9 @@ class _SyncExecutor:
         retry_cfg = self._retry_cfg
         max_attempts = self._max_attempts
         retry_on = self._retry_on
+        ignore_on = self._ignore_on
         circuit_error_types = self._circuit_error_types
+        circuit_ignore_on = self._circuit_ignore_on
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         has_timeout = self._has_timeout
@@ -544,7 +580,7 @@ class _SyncExecutor:
                 # Check retry_on_result predicate
                 if retry_on_result is not None and retry_on_result(result):
                     if attempt < max_attempts:
-                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        delay = self._resolve_delay(attempt, result)
                         if has_listeners:
                             _emit(
                                 listeners,
@@ -605,11 +641,21 @@ class _SyncExecutor:
                 last_exc = exc
                 duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                # Circuit breaker tracking
-                if circuit_breaker is not None and isinstance(exc, circuit_error_types):
+                # Circuit breaker tracking — ignored exceptions must never record failure
+                if (
+                    circuit_breaker is not None
+                    and isinstance(exc, circuit_error_types)
+                    and not (circuit_ignore_on and isinstance(exc, circuit_ignore_on))
+                ):
                     new_state = circuit_breaker.record_failure(duration)
                     if new_state == CircuitState.OPEN and has_listeners:
                         _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
+
+                # ignore_on: re-raise immediately, no retry, no fallback chain
+                if ignore_on and isinstance(exc, ignore_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FAILURE, func_name, attempt=attempt, error=exc)
+                    raise
 
                 # Retry if retryable and attempts remain
                 if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
@@ -631,7 +677,7 @@ class _SyncExecutor:
                             return _apply_fallback(fallback_cfg, exc)
                         raise
 
-                    delay = _compute_delay(retry_cfg, attempt)
+                    delay = self._resolve_delay(attempt, exc)
                     if has_listeners:
                         _emit(
                             listeners,
@@ -734,11 +780,14 @@ class _AsyncExecutor:
         "_cache",
         "_circuit_breaker",
         "_circuit_error_types",
+        "_circuit_ignore_on",
+        "_delay_func",
         "_fallback_cfg",
         "_fallback_on",
         "_fast_path",
         "_has_listeners",
         "_has_timeout",
+        "_ignore_on",
         "_listeners",
         "_max_attempts",
         "_rate_limiter",
@@ -764,6 +813,15 @@ class _AsyncExecutor:
         )
         self._fallback_on: tuple[Type[BaseException], ...] = (
             tuple(config.fallback.fallback_on) if config.fallback else ()
+        )
+        self._ignore_on: tuple[Type[BaseException], ...] = (
+            tuple(config.retry.ignore_on) if config.retry else ()
+        )
+        self._circuit_ignore_on: tuple[Type[BaseException], ...] = (
+            tuple(config.circuit_breaker.ignore_on) if config.circuit_breaker else ()
+        )
+        self._delay_func: Optional[Callable[[int, Any], Optional[float]]] = (
+            config.retry.delay_func if config.retry else None
         )
         self._retry_cfg = config.retry
         self._fallback_cfg = config.fallback
@@ -947,7 +1005,11 @@ class _AsyncExecutor:
                 )
             return result
         except Exception as exc:
-            if circuit_breaker is not None and isinstance(exc, self._circuit_error_types):
+            if (
+                circuit_breaker is not None
+                and isinstance(exc, self._circuit_error_types)
+                and not (self._circuit_ignore_on and isinstance(exc, self._circuit_ignore_on))
+            ):
                 new_state = circuit_breaker.record_failure(0.0)
                 if new_state == CircuitState.OPEN and has_listeners:
                     _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
@@ -958,6 +1020,24 @@ class _AsyncExecutor:
             if has_listeners:
                 _emit(listeners, EventType.FAILURE, func_name, error=exc)
             raise
+
+    def _resolve_delay(self, attempt: int, trigger: Union[BaseException, Any]) -> float:
+        """Compute retry delay, honouring custom delay_func when set.
+
+        Returns 0.0 for negative custom values; clamps to max_delay.
+        Falls back to _compute_delay when delay_func is absent or returns None.
+        """
+        delay_func = self._delay_func
+        if delay_func is not None:
+            custom = delay_func(attempt, trigger)
+            if custom is not None:
+                if custom < 0:
+                    return 0.0
+                max_delay = self._retry_cfg.max_delay  # type: ignore[union-attr]
+                if custom > max_delay:
+                    return max_delay
+                return custom
+        return _compute_delay(self._retry_cfg, attempt)  # type: ignore[arg-type]
 
     async def _execute_with_retry(
         self,
@@ -974,7 +1054,9 @@ class _AsyncExecutor:
         retry_cfg = self._retry_cfg
         max_attempts = self._max_attempts
         retry_on = self._retry_on
+        ignore_on = self._ignore_on
         circuit_error_types = self._circuit_error_types
+        circuit_ignore_on = self._circuit_ignore_on
         fallback_on = self._fallback_on
         fallback_cfg = self._fallback_cfg
         has_timeout = self._has_timeout
@@ -1045,7 +1127,7 @@ class _AsyncExecutor:
                 # Check retry_on_result predicate
                 if retry_on_result is not None and retry_on_result(result):
                     if attempt < max_attempts:
-                        delay = _compute_delay(retry_cfg, attempt) if retry_cfg else 0.0
+                        delay = self._resolve_delay(attempt, result)
                         if has_listeners:
                             _emit(
                                 listeners,
@@ -1106,10 +1188,21 @@ class _AsyncExecutor:
                 last_exc = exc
                 duration = (time.monotonic() - call_start) if track_duration else 0.0
 
-                if circuit_breaker is not None and isinstance(exc, circuit_error_types):
+                # Circuit breaker tracking — ignored exceptions must never record failure
+                if (
+                    circuit_breaker is not None
+                    and isinstance(exc, circuit_error_types)
+                    and not (circuit_ignore_on and isinstance(exc, circuit_ignore_on))
+                ):
                     new_state = circuit_breaker.record_failure(duration)
                     if new_state == CircuitState.OPEN and has_listeners:
                         _emit(listeners, EventType.CIRCUIT_OPEN, func_name, error=exc)
+
+                # ignore_on: re-raise immediately, no retry, no fallback chain
+                if ignore_on and isinstance(exc, ignore_on):
+                    if has_listeners:
+                        _emit(listeners, EventType.FAILURE, func_name, attempt=attempt, error=exc)
+                    raise
 
                 if retry_cfg is not None and attempt < max_attempts and isinstance(exc, retry_on):
                     # Check retry budget before retrying
@@ -1130,7 +1223,7 @@ class _AsyncExecutor:
                             return await _apply_fallback_async(fallback_cfg, exc)
                         raise
 
-                    delay = _compute_delay(retry_cfg, attempt)
+                    delay = self._resolve_delay(attempt, exc)
                     if has_listeners:
                         _emit(
                             listeners,

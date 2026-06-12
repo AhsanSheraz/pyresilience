@@ -46,6 +46,7 @@ nav:
   - Advanced:
       - Registry: advanced/registry.md
       - Presets: advanced/presets.md
+      - HTTP & LLM Helpers: advanced/http.md
       - Observability: advanced/observability.md
       - Combining Patterns: advanced/combining.md
       - Framework Integrations: advanced/frameworks.md

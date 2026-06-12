@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `ignore_on` on `RetryConfig` and `CircuitBreakerConfig` — exception types that are never retried and never counted as circuit-breaker failures; takes precedence over `retry_on` / `error_types`, enabling fail-fast behaviour on terminal client errors such as authentication failures and quota exhaustion.
+- `delay_func` on `RetryConfig` — optional callable that receives the triggering exception (or result) and the current attempt number and returns a delay in seconds; return `None` to fall back to the configured exponential backoff. Designed to honour HTTP `Retry-After` headers without requiring custom retry logic outside the decorator.
+- `pyresilience.contrib.http` — stdlib-only contrib module providing `retry_on_status()` (duck-typed predicate compatible with requests, httpx, and aiohttp response objects) and `retry_after_delay()` (parses `Retry-After` headers, both delta-seconds and HTTP-date forms, for use as a `delay_func`).
+- `llm_policy()` preset — rate limiter + retry with 429-aware, `Retry-After`-honoring backoff + timeout + circuit breaker, tuned for LLM / HTTP API calls; exported from `pyresilience` and `pyresilience.presets`.
+
 ## [0.1.2] - 2026-03-19
 
 ### Changed

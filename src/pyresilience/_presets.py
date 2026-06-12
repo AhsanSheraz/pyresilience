@@ -214,6 +214,91 @@ def queue_policy(
     return policy
 
 
+def llm_policy(
+    *,
+    timeout_seconds: float = 60.0,
+    max_attempts: int = 4,
+    retry_delay: float = 1.0,
+    max_calls: int = 60,
+    period: float = 60.0,
+    circuit_failure_threshold: int = 5,
+    circuit_recovery_seconds: float = 30.0,
+    max_concurrent: Optional[int] = None,
+    retry_on_status_codes: Sequence[int] = (429, 500, 502, 503, 504),
+    retry_after_max_wait: float = 60.0,
+    fallback: Optional[FallbackConfig] = None,
+    listeners: Optional[list[ResilienceListener]] = None,
+    retry_on: Optional[Sequence[Type[BaseException]]] = None,
+    ignore_on: Optional[Sequence[Type[BaseException]]] = None,
+) -> dict[str, Any]:
+    """Resilience policy optimized for LLM/HTTP API calls with 429/Retry-After-aware retrying.
+
+    Designed for calls to LLM providers (OpenAI, Anthropic, etc.) and other HTTP APIs
+    that use rate-limiting (HTTP 429) and Retry-After headers. Includes client-side
+    rate limiting to stay within provider quotas and a circuit breaker to avoid
+    hammering a degraded backend.
+
+    Defaults:
+    - 60s timeout (LLM inference can be slow)
+    - 4 total attempts (1 initial + 3 retries)
+    - 1s initial retry delay, honouring Retry-After headers up to ``retry_after_max_wait``
+    - Retries on HTTP status codes 429, 500, 502, 503, 504 via result predicate
+    - Client-side rate limit: 60 calls per 60s (1 RPS by default)
+    - Circuit breaker: opens after 5 failures, 30s recovery
+    - Retry-After header parsing: delays respect the server-supplied value
+
+    Args:
+        timeout_seconds: Max time per LLM call. Defaults to 60.0.
+        max_attempts: Total attempts including the first call. Defaults to 4.
+        retry_delay: Initial retry delay in seconds. Defaults to 1.0.
+        max_calls: Max calls allowed within ``period`` (rate limiter). Defaults to 60.
+        period: Rate-limiter window in seconds. Defaults to 60.0.
+        circuit_failure_threshold: Consecutive failures before circuit opens. Defaults to 5.
+        circuit_recovery_seconds: Seconds before retrying after circuit opens. Defaults to 30.0.
+        max_concurrent: Optional concurrency limit (bulkhead). None disables it.
+        retry_on_status_codes: HTTP status codes that trigger a retry via result predicate.
+            Defaults to (429, 500, 502, 503, 504).
+        retry_after_max_wait: Upper bound (seconds) for Retry-After-derived delays.
+            Defaults to 60.0.
+        fallback: Optional fallback config.
+        listeners: Optional event listeners.
+        retry_on: Additional exception types to retry on. Defaults to (Exception,).
+        ignore_on: Exception types that are never retried and never counted as circuit failures.
+            Useful for terminal errors like auth failures or invalid-request errors.
+    """
+    # Lazy import — contrib.http is an optional dependency; avoids import at module load time
+    from pyresilience.contrib.http import retry_after_delay, retry_on_status
+
+    retry_config = RetryConfig(
+        max_attempts=max_attempts,
+        delay=retry_delay,
+        max_delay=retry_after_max_wait,
+        retry_on_result=retry_on_status(*retry_on_status_codes),
+        delay_func=retry_after_delay(max_wait=retry_after_max_wait),
+        retry_on=tuple(retry_on) if retry_on is not None else (Exception,),
+        ignore_on=tuple(ignore_on) if ignore_on is not None else (),
+    )
+    circuit_breaker_config = CircuitBreakerConfig(
+        failure_threshold=circuit_failure_threshold,
+        recovery_timeout=circuit_recovery_seconds,
+        ignore_on=tuple(ignore_on) if ignore_on is not None else (),
+    )
+
+    policy: dict[str, Any] = {
+        "retry": retry_config,
+        "timeout": TimeoutConfig(seconds=timeout_seconds),
+        "circuit_breaker": circuit_breaker_config,
+        "rate_limiter": RateLimiterConfig(max_calls=max_calls, period=period),
+    }
+    if max_concurrent is not None:
+        policy["bulkhead"] = BulkheadConfig(max_concurrent=max_concurrent)
+    if fallback is not None:
+        policy["fallback"] = fallback
+    if listeners is not None:
+        policy["listeners"] = listeners
+    return policy
+
+
 def strict_policy(
     *,
     timeout_seconds: float = 5.0,

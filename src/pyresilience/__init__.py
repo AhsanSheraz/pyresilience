@@ -17,7 +17,7 @@ from pyresilience._exceptions import (
 from pyresilience._executor import enable_in_flight_tracking, get_in_flight_count, shutdown
 from pyresilience._health import health_check
 from pyresilience._logging import JsonEventLogger, MetricsCollector, resilience_context
-from pyresilience._presets import db_policy, http_policy, queue_policy, strict_policy
+from pyresilience._presets import db_policy, http_policy, llm_policy, queue_policy, strict_policy
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
 from pyresilience._registry import ResilienceRegistry
 from pyresilience._retry_budget import RetryBudget
@@ -75,6 +75,7 @@ __all__ = [
     "health_check",
     "http_policy",
     "install_uvloop",
+    "llm_policy",
     "queue_policy",
     "resilience_context",
     "resilient",

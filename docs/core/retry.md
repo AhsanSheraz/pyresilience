@@ -44,6 +44,8 @@ config = RetryConfig(
 | `jitter` | `bool` | `True` | Add random jitter to delay (10% floor to 1.0x of calculated delay — never produces zero-delay) |
 | `retry_on` | `Sequence[Type]` | `(Exception,)` | Exception types that trigger a retry |
 | `retry_on_result` | `Callable[[Any], bool]` | `None` | Predicate to retry based on return value |
+| `ignore_on` | `Sequence[Type]` | `()` | Exception types that are never retried; takes precedence over `retry_on` |
+| `delay_func` | `Callable[[int, Any], Optional[float]]` | `None` | Dynamic per-attempt delay computed from the triggering exception or result |
 
 ## Usage
 
@@ -126,6 +128,59 @@ The predicate receives the return value. If it returns `True`, the call is retri
 ))
 def poll_queue() -> list:
     return queue.receive_messages()
+```
+
+### Never Retry Certain Exceptions (`ignore_on`)
+
+Some failures are terminal — invalid credentials, exhausted quotas, malformed requests. Retrying
+them wastes time and can mask the real bug. `ignore_on` lists exception types that are re-raised
+immediately, even when they also match `retry_on`:
+
+```python
+@resilient(retry=RetryConfig(
+    max_attempts=5,
+    retry_on=(Exception,),            # retry everything...
+    ignore_on=(AuthError, QuotaExceededError, ValueError),  # ...except these
+))
+def call_api() -> dict:
+    return client.fetch()
+```
+
+`ignore_on` takes precedence over `retry_on`, bypasses any configured fallback, and emits a
+single `EventType.FAILURE` event. The same option exists on `CircuitBreakerConfig` so ignored
+exceptions don't trip the circuit either — see [CircuitBreaker](circuitbreaker.md).
+
+### Dynamic Delays (`delay_func`)
+
+`delay_func` receives the attempt number and the *trigger* — the raised exception
+(exception-driven retries) or the raw return value (`retry_on_result` retries) — and returns the
+delay in seconds. Return `None` to fall back to the configured exponential backoff. Non-`None`
+returns are clamped to `[0, max_delay]`.
+
+```python
+def delay_from_error(attempt: int, trigger) -> Optional[float]:
+    if isinstance(trigger, RateLimitError):
+        return trigger.retry_after          # server told us how long to wait
+    return None                             # exponential backoff for everything else
+
+@resilient(retry=RetryConfig(max_attempts=4, delay=1.0, delay_func=delay_from_error))
+def call_api() -> dict:
+    return client.fetch()
+```
+
+The most common use — honoring HTTP `Retry-After` headers on 429 responses — ships ready-made in
+[`pyresilience.contrib.http`](../advanced/http.md):
+
+```python
+from pyresilience.contrib.http import retry_on_status, retry_after_delay
+
+@resilient(retry=RetryConfig(
+    max_attempts=4,
+    retry_on_result=retry_on_status(429, 503),
+    delay_func=retry_after_delay(max_wait=60.0),
+))
+def call_api():
+    return requests.get("https://api.example.com")
 ```
 
 ## Events

@@ -575,3 +575,153 @@ class TestCircuitBreakerManualControl:
         cb.force_close()
         assert cb.state == CircuitState.CLOSED
         assert cb.metrics["total_calls"] == 0
+
+
+class TestCircuitBreakerIgnoreOn:
+    def test_ignore_on_exception_does_not_count_as_failure(self) -> None:
+        """Circuit breaker stays CLOSED when ignore_on exception is raised."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, ignore_on=[ValueError]),
+        )
+        def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        # Raise the ignored error 5 times - circuit should stay CLOSED
+        for _ in range(5):
+            with pytest.raises(ValueError, match="ignored error"):
+                fails_with_ignored_error()
+
+        # Circuit should still be closed, so 6th call should execute normally
+        assert call_count == 5
+        with pytest.raises(ValueError, match="ignored error"):
+            fails_with_ignored_error()
+        assert call_count == 6
+
+    def test_ignore_on_takes_precedence_over_error_types(self) -> None:
+        """When exception is in both ignore_on and error_types, it is ignored."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(
+                failure_threshold=2,
+                error_types=[ValueError],
+                ignore_on=[ValueError],
+            ),
+        )
+        def fails_with_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("should not count")
+
+        # Fail 5 times with ignored exception
+        for _ in range(5):
+            with pytest.raises(ValueError, match="should not count"):
+                fails_with_error()
+
+        # Circuit should still be closed
+        assert call_count == 5
+        with pytest.raises(ValueError, match="should not count"):
+            fails_with_error()
+        assert call_count == 6
+
+    def test_circuit_opens_without_ignore_on(self) -> None:
+        """Control test: circuit opens normally when ignore_on is not used."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2),
+        )
+        def fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        # First two failures should open the circuit
+        for _ in range(2):
+            with pytest.raises(ValueError):
+                fails()
+
+        # Third call should be blocked by circuit
+        assert call_count == 2
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
+            fails()
+        assert call_count == 2  # Not incremented
+
+
+class TestCircuitBreakerIgnoreOnAsync:
+    async def test_ignore_on_exception_does_not_count_as_failure(self) -> None:
+        """Circuit breaker stays CLOSED when ignore_on exception is raised."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2, ignore_on=[ValueError]),
+        )
+        async def fails_with_ignored_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("ignored error")
+
+        # Raise the ignored error 5 times - circuit should stay CLOSED
+        for _ in range(5):
+            with pytest.raises(ValueError, match="ignored error"):
+                await fails_with_ignored_error()
+
+        # Circuit should still be closed, so 6th call should execute normally
+        assert call_count == 5
+        with pytest.raises(ValueError, match="ignored error"):
+            await fails_with_ignored_error()
+        assert call_count == 6
+
+    async def test_ignore_on_takes_precedence_over_error_types(self) -> None:
+        """When exception is in both ignore_on and error_types, it is ignored."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(
+                failure_threshold=2,
+                error_types=[ValueError],
+                ignore_on=[ValueError],
+            ),
+        )
+        async def fails_with_error() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("should not count")
+
+        # Fail 5 times with ignored exception
+        for _ in range(5):
+            with pytest.raises(ValueError, match="should not count"):
+                await fails_with_error()
+
+        # Circuit should still be closed
+        assert call_count == 5
+        with pytest.raises(ValueError, match="should not count"):
+            await fails_with_error()
+        assert call_count == 6
+
+    async def test_circuit_opens_without_ignore_on(self) -> None:
+        """Control test: circuit opens normally when ignore_on is not used."""
+        call_count = 0
+
+        @resilient(
+            circuit_breaker=CircuitBreakerConfig(failure_threshold=2),
+        )
+        async def fails() -> str:
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("fail")
+
+        # First two failures should open the circuit
+        for _ in range(2):
+            with pytest.raises(ValueError):
+                await fails()
+
+        # Third call should be blocked by circuit
+        assert call_count == 2
+        with pytest.raises(CircuitOpenError, match="Circuit breaker is open"):
+            await fails()
+        assert call_count == 2  # Not incremented

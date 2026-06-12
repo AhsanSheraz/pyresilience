@@ -75,6 +75,7 @@ config = CircuitBreakerConfig(
 | `minimum_calls` | `int` | `0` | Minimum calls in window before evaluating thresholds |
 | `slow_call_duration` | `float` | `0.0` | Duration in seconds above which a call is considered "slow" (0 = disabled) |
 | `slow_call_rate_threshold` | `float` | `1.0` | Slow call rate (0.0–1.0) to trip the circuit |
+| `ignore_on` | `Sequence[Type]` | `()` | Exception types that never count as failures; takes precedence over `error_types` |
 
 ## Usage
 
@@ -107,6 +108,25 @@ def call_api() -> dict:
 ```
 
 `ValueError` or `json.JSONDecodeError` won't trip the circuit — only connection and timeout errors will.
+
+### Ignoring Exceptions (`ignore_on`)
+
+The inverse of `error_types`: list exceptions that must **never** count as circuit failures, even
+when they match `error_types`. Useful for client-side errors (bad input, auth failures, quota
+exhaustion) that say nothing about the downstream service's health:
+
+```python
+@resilient(circuit_breaker=CircuitBreakerConfig(
+    failure_threshold=5,
+    error_types=(Exception,),                 # count everything...
+    ignore_on=(AuthError, ValidationError),   # ...except terminal client errors
+))
+def call_api() -> dict:
+    return client.fetch()
+```
+
+Ignored exceptions still propagate to the caller — they just don't move the circuit toward OPEN.
+Pair with `RetryConfig.ignore_on` (see [Retry](retry.md)) to also skip retries for the same types.
 
 ### With Fallback
 
