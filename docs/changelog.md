@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.1 (2026-10-18)
+
+### Bug Fixes
+- **Retry budget for `retry_on_result`**: result-triggered retries now consume the shared retry budget in both sync and async executors, matching the existing behavior for exception retries. When the budget is exhausted the latest result is returned and a `RETRY_EXHAUSTED` event is emitted. Previously `retry_on_result` retries bypassed the budget entirely.
+
+---
+
 ## v0.4.0 (2026-06-12)
 
 ### New Features
