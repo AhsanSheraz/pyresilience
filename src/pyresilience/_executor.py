@@ -580,6 +580,17 @@ class _SyncExecutor:
                 # Check retry_on_result predicate
                 if retry_on_result is not None and retry_on_result(result):
                     if attempt < max_attempts:
+                        retry_budget = self._retry_budget
+                        if retry_budget is not None and not retry_budget.acquire():
+                            if has_listeners:
+                                _emit(
+                                    listeners,
+                                    EventType.RETRY_EXHAUSTED,
+                                    func_name,
+                                    attempt=attempt,
+                                    detail="retry budget exhausted",
+                                )
+                            return result
                         delay = self._resolve_delay(attempt, result)
                         if has_listeners:
                             _emit(
@@ -1127,6 +1138,17 @@ class _AsyncExecutor:
                 # Check retry_on_result predicate
                 if retry_on_result is not None and retry_on_result(result):
                     if attempt < max_attempts:
+                        retry_budget = self._retry_budget
+                        if retry_budget is not None and not retry_budget.acquire():
+                            if has_listeners:
+                                _emit(
+                                    listeners,
+                                    EventType.RETRY_EXHAUSTED,
+                                    func_name,
+                                    attempt=attempt,
+                                    detail="retry budget exhausted",
+                                )
+                            return result
                         delay = self._resolve_delay(attempt, result)
                         if has_listeners:
                             _emit(

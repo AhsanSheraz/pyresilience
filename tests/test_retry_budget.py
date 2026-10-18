@@ -159,3 +159,250 @@ class TestRetryBudgetAsync:
 
         # 1 initial + 2 retries = 3 calls max
         assert call_count == 3
+
+
+class TestRetryBudgetOnResult:
+    @pytest.mark.parametrize("with_listeners", [False, True])
+    def test_result_retries_stop_at_budget(self, with_listeners: bool) -> None:
+        from pyresilience import EventType, ResilienceEvent, RetryConfig, resilient
+
+        call_count = 0
+        delay_count = 0
+        events: list[ResilienceEvent] = []
+
+        def delay_func(attempt: int, result: object) -> float:
+            nonlocal delay_count
+            delay_count += 1
+            return 0.0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=10,
+                retry_on_result=lambda result: True,
+                delay_func=delay_func,
+            ),
+            retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+            listeners=[events.append] if with_listeners else [],
+        )
+        def pending() -> int:
+            nonlocal call_count
+            call_count += 1
+            return call_count
+
+        assert pending() == 3
+        assert call_count == 3
+        assert delay_count == 2
+        if with_listeners:
+            assert [event.event_type for event in events] == [
+                EventType.RETRY,
+                EventType.RETRY,
+                EventType.RETRY_EXHAUSTED,
+            ]
+            assert events[-1].detail == "retry budget exhausted"
+            assert events[-1].attempt == 3
+
+        events.clear()
+        assert pending() == 4
+        assert call_count == 4
+        assert delay_count == 2
+        if with_listeners:
+            assert [event.event_type for event in events] == [EventType.RETRY_EXHAUSTED]
+            assert events[0].detail == "retry budget exhausted"
+            assert events[0].attempt == 1
+        else:
+            assert events == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("with_listeners", [False, True])
+    async def test_async_result_retries_stop_at_budget(self, with_listeners: bool) -> None:
+        from pyresilience import EventType, ResilienceEvent, RetryConfig, resilient
+
+        call_count = 0
+        delay_count = 0
+        events: list[ResilienceEvent] = []
+
+        def delay_func(attempt: int, result: object) -> float:
+            nonlocal delay_count
+            delay_count += 1
+            return 0.0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=10,
+                retry_on_result=lambda result: True,
+                delay_func=delay_func,
+            ),
+            retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+            listeners=[events.append] if with_listeners else [],
+        )
+        async def pending() -> int:
+            nonlocal call_count
+            call_count += 1
+            return call_count
+
+        assert await pending() == 3
+        assert call_count == 3
+        assert delay_count == 2
+        if with_listeners:
+            assert [event.event_type for event in events] == [
+                EventType.RETRY,
+                EventType.RETRY,
+                EventType.RETRY_EXHAUSTED,
+            ]
+            assert events[-1].detail == "retry budget exhausted"
+            assert events[-1].attempt == 3
+
+        events.clear()
+        assert await pending() == 4
+        assert call_count == 4
+        assert delay_count == 2
+        if with_listeners:
+            assert [event.event_type for event in events] == [EventType.RETRY_EXHAUSTED]
+            assert events[0].detail == "retry budget exhausted"
+            assert events[0].attempt == 1
+        else:
+            assert events == []
+
+    @pytest.mark.parametrize("exception_first", [False, True])
+    def test_result_and_exception_retries_share_budget(self, exception_first: bool) -> None:
+        from pyresilience import RetryConfig, resilient
+
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=10,
+                delay=0,
+                retry_on_result=lambda result: True,
+            ),
+            retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+        )
+        def alternating() -> int:
+            nonlocal call_count
+            call_count += 1
+            if (call_count % 2 == 1) == exception_first:
+                raise ValueError(f"attempt {call_count}")
+            return call_count
+
+        if exception_first:
+            with pytest.raises(ValueError, match="attempt 3"):
+                alternating()
+        else:
+            assert alternating() == 3
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exception_first", [False, True])
+    async def test_async_result_and_exception_retries_share_budget(
+        self, exception_first: bool
+    ) -> None:
+        from pyresilience import RetryConfig, resilient
+
+        call_count = 0
+
+        @resilient(
+            retry=RetryConfig(
+                max_attempts=10,
+                delay=0,
+                retry_on_result=lambda result: True,
+            ),
+            retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+        )
+        async def alternating() -> int:
+            nonlocal call_count
+            call_count += 1
+            if (call_count % 2 == 1) == exception_first:
+                raise ValueError(f"attempt {call_count}")
+            return call_count
+
+        if exception_first:
+            with pytest.raises(ValueError, match="attempt 3"):
+                await alternating()
+        else:
+            assert await alternating() == 3
+        assert call_count == 3
+
+    @pytest.mark.parametrize("retry_result", [False, True])
+    def test_returned_result_preserves_unused_budget(self, retry_result: bool) -> None:
+        from pyresilience import ResilienceConfig, ResilienceRegistry, RetryConfig
+
+        registry = ResilienceRegistry()
+        registry.register(
+            "api",
+            ResilienceConfig(
+                retry=RetryConfig(
+                    max_attempts=2,
+                    delay=0,
+                    retry_on_result=lambda result: result == "pending",
+                ),
+                retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+            ),
+        )
+        result_calls = 0
+        exception_calls = 0
+
+        @registry.decorator("api")
+        def returning() -> str:
+            nonlocal result_calls
+            result_calls += 1
+            return "pending" if retry_result else "ready"
+
+        @registry.decorator("api")
+        def failing() -> str:
+            nonlocal exception_calls
+            exception_calls += 1
+            raise ValueError("unavailable")
+
+        assert returning() == ("pending" if retry_result else "ready")
+        assert result_calls == (2 if retry_result else 1)
+        remaining_retries = 1 if retry_result else 2
+        for call in range(remaining_retries):
+            with pytest.raises(ValueError, match="unavailable"):
+                failing()
+            assert exception_calls == 2 * (call + 1)
+        with pytest.raises(ValueError, match="unavailable"):
+            failing()
+        assert exception_calls == 2 * remaining_retries + 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("retry_result", [False, True])
+    async def test_async_returned_result_preserves_unused_budget(self, retry_result: bool) -> None:
+        from pyresilience import ResilienceConfig, ResilienceRegistry, RetryConfig
+
+        registry = ResilienceRegistry()
+        registry.register(
+            "api",
+            ResilienceConfig(
+                retry=RetryConfig(
+                    max_attempts=2,
+                    delay=0,
+                    retry_on_result=lambda result: result == "pending",
+                ),
+                retry_budget=RetryBudgetConfig(max_retries=2, refill_rate=0.0001),
+            ),
+        )
+        result_calls = 0
+        exception_calls = 0
+
+        @registry.decorator("api")
+        async def returning() -> str:
+            nonlocal result_calls
+            result_calls += 1
+            return "pending" if retry_result else "ready"
+
+        @registry.decorator("api")
+        async def failing() -> str:
+            nonlocal exception_calls
+            exception_calls += 1
+            raise ValueError("unavailable")
+
+        assert await returning() == ("pending" if retry_result else "ready")
+        assert result_calls == (2 if retry_result else 1)
+        remaining_retries = 1 if retry_result else 2
+        for call in range(remaining_retries):
+            with pytest.raises(ValueError, match="unavailable"):
+                await failing()
+            assert exception_calls == 2 * (call + 1)
+        with pytest.raises(ValueError, match="unavailable"):
+            await failing()
+        assert exception_calls == 2 * remaining_retries + 1
