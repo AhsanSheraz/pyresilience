@@ -14,11 +14,13 @@ from pyresilience._types import EventType, ResilienceEvent
 class TestOpenTelemetryListenerMissing:
     """Tests when opentelemetry is NOT installed."""
 
-    def test_raises_import_error_without_otel(self) -> None:
-        from pyresilience.contrib.otel import OpenTelemetryListener
+    def test_raises_import_error_without_otel(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import pyresilience.contrib.otel as otel_mod
+
+        monkeypatch.setattr(otel_mod, "_HAS_OTEL", False)
 
         with pytest.raises(ImportError, match="opentelemetry-api is required"):
-            OpenTelemetryListener()
+            otel_mod.OpenTelemetryListener()
 
 
 class TestOpenTelemetryListenerWithMock:
