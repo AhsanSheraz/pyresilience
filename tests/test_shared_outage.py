@@ -67,6 +67,16 @@ def _age(windows: _SharedWindows, seconds: float) -> None:
     windows._down_until -= seconds
 
 
+def _pause_left(windows: _SharedWindows) -> float:
+    """Seconds until the next call may try the backend.
+
+    Compare it with ``pytest.approx``, never with an exact upper bound: on Windows
+    before Python 3.13 the clock ticks every 15.6 ms, so two reads return the same
+    value and the difference can exceed the pause by a float rounding error.
+    """
+    return windows._down_until - time.monotonic()
+
+
 def _unit_windows(backend: Any, **kwargs: Any) -> _SharedWindows:
     return _SharedWindows(backend, "svc", ["calls"], [10.0], [LONG], True, **kwargs)
 
@@ -164,39 +174,35 @@ class TestBackendOutageSync:
     def test_quick_failure_keeps_the_configured_pause(self) -> None:
         windows = _unit_windows(DownBackend())
         windows.acquire([1.0])
-        remaining = windows._down_until - time.monotonic()
-        assert 0.5 < remaining <= 1.0
+        assert _pause_left(windows) == pytest.approx(1.0, abs=0.5)
 
     def test_pause_grows_with_the_time_the_failed_call_took(self) -> None:
         backend = DownBackend()
         windows = _unit_windows(backend)
 
-        # The client takes 0.2 s to give up
+        # The client takes 0.3 s to give up
         gate = threading.Event()
         backend.gate = gate
         slow = threading.Thread(target=windows.acquire, args=([1.0],))
         slow.start()
         assert backend.waiting.wait(10.0)
-        time.sleep(0.2)
+        time.sleep(0.3)
         gate.set()
         slow.join(10.0)
         assert not slow.is_alive()
 
-        # Ten times as long as the call took (about 2 s), not the 1 s of a quick failure
-        remaining = windows._down_until - time.monotonic()
-        assert remaining > 1.5
+        # Ten times as long as the call took (about 3 s), not the 1 s of a quick failure
+        assert _pause_left(windows) > 1.5
 
     def test_pause_after_a_slow_failure_is_capped(self) -> None:
         windows = _unit_windows(DownBackend())
         windows._backend_failed(120.0)
-        remaining = windows._down_until - time.monotonic()
-        assert 29.0 < remaining <= 30.0
+        assert _pause_left(windows) == pytest.approx(30.0, abs=1.0)
 
     def test_a_long_configured_pause_is_kept(self) -> None:
         windows = _unit_windows(DownBackend(), pause=90.0)
         windows._backend_failed(120.0)
-        remaining = windows._down_until - time.monotonic()
-        assert 89.0 < remaining <= 90.0
+        assert _pause_left(windows) == pytest.approx(90.0, abs=1.0)
 
     def test_retry_charges_and_corrections_skip_a_paused_backend(self) -> None:
         backend = DownBackend()
