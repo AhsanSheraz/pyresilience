@@ -377,7 +377,7 @@ Cost of one successful decorated call with the 0.5.0 features, from [`benchmarks
 | Timeout: per attempt + overall deadline (sync) | 23.75μs | 33.11μs |
 | Stream idle timeout (async, per item) | 3.07μs | 2.58μs |
 
-Existing hot paths: two runs of `benchmarks/bench_compare.py` (working tree against 0.4.1, 9 alternating rounds each) put every `bench_overhead.py` configuration within about 10% in either direction, with the two runs disagreeing in sign on most rows. That is the noise floor of the machine used; no difference beyond it was measured.
+The existing hot paths are unchanged: `benchmarks/bench_compare.py` (working tree against 0.4.1, fastest of 25 alternating rounds) puts every `bench_overhead.py` configuration between -3.6% and +1.9% of 0.4.1, which is run-to-run noise.
 
 ## Comparison
 

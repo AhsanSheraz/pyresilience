@@ -25,7 +25,7 @@
 - `ResilienceRegistry.register()` on an existing name now drops the cached executors of that name
 
 ### Performance
-- No measurable cost for features that are not configured: two runs of `bench_compare.py` against 0.4.1 (9 alternating rounds each) differ by at most about 10% per configuration and disagree in sign, which is the noise floor of the machine used
+- No measurable cost for features that are not configured: every `bench_overhead.py` configuration is between -3.6% and +1.9% of 0.4.1 (`bench_compare.py`, fastest of 25 alternating rounds), which is run-to-run noise
 - New `benchmarks/bench_new_features.py` and `benchmarks/bench_compare.py`; results in [Performance](advanced/performance.md)
 
 ### Tests

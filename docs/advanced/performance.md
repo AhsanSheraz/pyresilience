@@ -88,28 +88,24 @@ What the numbers say:
 
 ### Hot Path Check Against 0.4.1
 
-`benchmarks/bench_compare.py` runs `bench_overhead.py` against two source trees in alternating
-rounds. Working tree against 0.4.1, Python 3.14, same machine, two runs of 9 rounds each. The
-absolute columns are from run 1; the last two columns are the change measured in each run:
+`benchmarks/bench_compare.py` times the `bench_overhead.py` configurations against two source
+trees in short alternating rounds. Working tree against 0.4.1, Python 3.14, same machine,
+fastest of 25 rounds for each side:
 
-| Configuration | 0.4.1 | 0.5.0 | Run 1 | Run 2 |
-|---------------|------:|------:|------:|------:|
-| `@resilient` (default retry) | 1.01μs | 0.94μs | -6.9% | +4.8% |
-| Retry only | 1.27μs | 1.23μs | -3.1% | +6.8% |
-| Retry + `ignore_on` | 1.26μs | 1.19μs | -5.6% | +10.0% |
-| Retry + `delay_func` | 1.30μs | 1.25μs | -3.8% | +6.1% |
-| Retry + timeout (sync) | 23.91μs | 23.45μs | -1.9% | +24.6% |
-| Retry + circuit breaker | 1.88μs | 1.89μs | +0.5% | +10.5% |
-| All patterns (no cache) | 26.43μs | 26.53μs | +0.4% | +3.7% |
-| Cache (first call) | 2.49μs | 2.46μs | -1.2% | -5.9% |
-| Cache (hit) | 2.53μs | 2.54μs | +0.4% | -7.6% |
+| Configuration | 0.4.1 | 0.5.0 | Change |
+|---------------|------:|------:|-------:|
+| `@resilient` (default retry) | 1.01μs | 0.98μs | -3.1% |
+| Retry only | 1.28μs | 1.25μs | -2.1% |
+| Retry + `ignore_on` | 1.27μs | 1.29μs | +1.9% |
+| Retry + `delay_func` | 1.28μs | 1.27μs | -0.7% |
+| Retry + timeout (sync) | 19.30μs | 18.61μs | -3.6% |
+| Retry + circuit breaker | 1.84μs | 1.79μs | -2.8% |
+| All patterns (no cache) | 21.97μs | 22.01μs | +0.2% |
+| Cache (hit) | 2.43μs | 2.42μs | -0.4% |
 
-The two runs disagree in sign on most rows, so the difference between 0.4.1 and 0.5.0 is
-smaller than what this machine can resolve (about 10% per configuration; the sync timeout
-row, which hops through a worker thread, varies most). On the success path of a call that
-uses none of the new features the code changed only trivially: an entry point chosen once per
-executor and one extra local check in the retry loop.
-Run `bench_compare.py` on a quiet machine before relying on a tighter bound.
+No configuration is slower than 0.4.1 beyond run-to-run noise: a second run of 25 rounds gave
+changes between -3.8% and +4.3%, with different rows on either side of zero. Features that are
+not configured cost nothing measurable.
 
 ### Python 3.15
 
