@@ -262,13 +262,18 @@ With five replicas, a limit of 100 calls per minute is really 500, and a breaker
 
 ```python
 import redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from pyresilience import resilient, CircuitBreakerConfig, RateLimiterConfig, SharedStateConfig
 from pyresilience.contrib.redis import RedisBackend
+
+# Rate-limited calls wait for this client: short timeouts, no retries of its own
+client = redis.Redis(socket_connect_timeout=0.5, socket_timeout=0.5, retry=Retry(NoBackoff(), 0))
 
 @resilient(
     circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
     rate_limiter=RateLimiterConfig(max_calls=100, period=60.0),
-    shared_state=SharedStateConfig(backend=RedisBackend(redis.Redis()), key="payment-api"),
+    shared_state=SharedStateConfig(backend=RedisBackend(client), key="payment-api"),
 )
 def charge(amount: float) -> dict: ...
 ```

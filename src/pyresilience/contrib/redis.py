@@ -8,10 +8,20 @@ client you already use. Any client with redis-py's synchronous API works
 Usage::
 
     import redis
+    from redis.backoff import NoBackoff
+    from redis.retry import Retry
     from pyresilience import RateLimiterConfig, SharedStateConfig, resilient
     from pyresilience.contrib.redis import RedisBackend
 
-    backend = RedisBackend(redis.Redis(host="localhost", port=6379))
+    # Rate-limited calls wait for this client: short timeouts, no retries of its own
+    client = redis.Redis(
+        host="localhost",
+        port=6379,
+        socket_connect_timeout=0.5,
+        socket_timeout=0.5,
+        retry=Retry(NoBackoff(), 0),
+    )
+    backend = RedisBackend(client)
 
     @resilient(
         rate_limiter=RateLimiterConfig(max_calls=100, period=60.0),
