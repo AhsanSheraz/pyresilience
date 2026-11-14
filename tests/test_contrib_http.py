@@ -384,7 +384,11 @@ class TestContribHttpModuleHygiene:
         assert "from aiohttp" not in src_text
 
     def test_module_exports_correct_all(self) -> None:
-        """Verify __all__ contains exactly retry_on_status and retry_after_delay."""
+        """Verify __all__ lists exactly the public helpers."""
         from pyresilience.contrib import http as http_module
 
-        assert http_module.__all__ == ["retry_after_delay", "retry_on_status"]
+        assert http_module.__all__ == [
+            "rate_limit_feedback",
+            "retry_after_delay",
+            "retry_on_status",
+        ]

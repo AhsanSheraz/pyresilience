@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.5.0 (2026-11-14)
+
+### New Features
+- **Composable timeouts**: `TimeoutConfig.total_seconds` adds an overall deadline for all attempts and retry waits on top of the per-attempt `seconds`; each attempt gets `min(seconds, time left)`. See [TimeLimiter](core/timelimiter.md)
+- **Stream idle timeout**: `TimeoutConfig.stream_idle_seconds` bounds the wait for the first item and between items of an iterator or async iterator result
+- **Several rate limits at once**: `RateLimiterConfig.limits` with `RateLimit` entries, acquired all-or-nothing (requests and tokens, per second and per day). See [RateLimiter](core/ratelimiter.md)
+- **Weighted rate limiting**: `cost` computes a call's weight from its arguments
+- **Token reconciliation**: `actual_cost` settles the reserved estimate against the real usage after the call
+- **Server-driven rate limiting**: `RateLimiterConfig.feedback` and `RateLimitFeedback`; `contrib.http.rate_limit_feedback()` parses `Retry-After`, `x-ratelimit-*`, `anthropic-ratelimit-*` and `RateLimit-*` headers
+- **`charge_retries`**: debit every retry attempt against the limits
+- **`llm_policy()` options**: `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit`, `rate_limit_max_wait` (defaults unchanged)
+- **Fallback alternatives**: `FallbackConfig.alternatives` are tried in order with the original arguments before the handler. See [Fallback](core/fallback.md)
+- **Fallback cooldown**: `cooldown` and `cooldown_threshold` skip a target that keeps failing; new `EventType.COOLDOWN`
+- **Shared state across processes**: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state; `InMemoryBackend` in the core, `contrib.redis.RedisBackend` around a Redis client you supply. Still zero dependencies. Works in forked workers, and during a backend outage one call at a time waits for the backend instead of every call. See [Shared State](advanced/shared-state.md)
+- **Python 3.15**: supported and tested in CI
+
+### Changes
+- **Registry**: sync and async functions under one name now share the circuit breaker, rate limits, retry budget and fallback cooldown state (bulkhead slots and cached results stay separate per call style)
+- **Total-deadline timeouts** stop retrying as soon as the time left cannot cover the next retry wait and raise `ResilienceTimeoutError` chained from the last error, instead of sleeping through the remaining waits. A fallback for the error that was being retried still applies
+- **Rate limit rejections** name the limit in the event detail and error message when `cost`, `limits`, `feedback` or `charge_retries` is configured
+
+### Bug Fixes
+- `ResilienceRegistry.register()` on an existing name now drops the cached executors of that name
+
+### Performance
+- No measurable cost for features that are not configured: every `bench_overhead.py` configuration is between -1.6% and +2.9% of 0.4.1 (`bench_compare.py`, median of 25 alternating rounds), which is run-to-run noise
+- New `benchmarks/bench_new_features.py` and `benchmarks/bench_compare.py`; results in [Performance](advanced/performance.md)
+
+### Tests
+- 863 tests (up from 464), 98% branch coverage
+- Passing on Python 3.15.1
+
+---
+
 ## v0.4.1 (2026-10-18)
 
 ### Bug Fixes

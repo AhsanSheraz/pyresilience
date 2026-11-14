@@ -56,7 +56,7 @@ pip install -e ".[dev]"
 
 ## Requirements
 
-- **Python 3.9+** (tested on 3.9, 3.10, 3.11, 3.12, 3.13, 3.14)
+- **Python 3.9+** (CI tests 3.10, 3.11, 3.12, 3.13, 3.14 and 3.15)
 - **No runtime dependencies** — pure Python stdlib
 - Runs on **Linux, macOS, and Windows**
 

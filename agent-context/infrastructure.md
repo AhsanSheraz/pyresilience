@@ -55,7 +55,16 @@ Distribution only: PyPI (package) and Read the Docs (documentation).
 | Read the Docs | Hosted docs | `.readthedocs.yml` (Python 3.12, `mkdocs.yml`, `docs/requirements.txt`) |
 | GitHub Pages (mkdocs gh-deploy) | Docs deploy on pushes touching `docs/**` or `mkdocs.yml` | `.github/workflows/docs.yml` |
 | Codecov | Coverage upload | `ci.yml` `coverage` job (uses the `CODECOV_TOKEN` repository secret) |
+| Redis (optional, user-supplied) | Cross-process shared state through `contrib/redis.py` `RedisBackend`; no Redis library is a dependency | `integrations/redis.md` |
 | Dependabot | Dependency PRs | `.github/dependabot.yml`, `.github/workflows/auto-merge-dependabot.yml` |
+
+## Benchmarks
+
+`benchmarks/README.md` documents them. `bench_overhead.py` (per-pattern overhead), `bench_new_features.py` (0.5.0 features), `bench_compare.py` (working tree against a git ref, default `main`, alternating rounds), `full_benchmark.py` and `stress_test.py` (against tenacity, backoff, stamina, pybreaker; these are not dependencies).
+
+## CI Python Matrix
+
+`.github/workflows/ci.yml` `test` job: Python 3.10 to 3.15 on ubuntu, macos, windows. `tox.ini` envlist: py39 to py315, lint, typecheck. `pyproject.toml` classifiers list 3.10 to 3.15.
 
 <!-- /agent-updatable -->
 
@@ -65,7 +74,7 @@ Distribution only: PyPI (package) and Read the Docs (documentation).
 
 `.github/workflows/ci.yml` runs on pushes to `main`, `v*` tags and PRs to `main`:
 
-- `test`: ubuntu/macos/windows x Python 3.10 to 3.14 (`pytest -v`). Python 3.9 is not in the CI matrix; it is only listed in `tox.ini`.
+- `test`: ubuntu/macos/windows x Python 3.10 to 3.15 (`pytest -v`). Python 3.9 is not in the CI matrix; it is only listed in `tox.ini`.
 - `coverage`: Python 3.12, `--cov-branch --cov-fail-under=95`, uploads to Codecov.
 - `lint`: `ruff check` and `ruff format --check` on `src/ tests/`.
 - `type-check`: `mypy src/pyresilience`.

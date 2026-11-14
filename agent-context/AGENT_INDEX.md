@@ -53,11 +53,15 @@ agent-context/
 ├── integrations/               <- optional adapters and optional deps
 │   ├── fastapi.md  django.md  flask.md  http.md
 │   ├── otel.md  prometheus.md
+│   ├── redis.md                <- Redis state backend
 │   └── perf-deps.md            <- uvloop / orjson
 └── domains/                    <- pattern internals
     ├── executor-pipeline.md    <- order of patterns, registry, shutdown
     ├── retry.md                <- retry loop, backoff, retry budget
-    └── circuit-breaker.md      <- state machine, sliding window
+    ├── circuit-breaker.md      <- state machine, sliding window
+    ├── rate-limiting.md        <- plain and weighted limiters, feedback
+    ├── fallback.md             <- handler, alternatives, cooldown
+    └── shared-state.md         <- registry sharing, state backends, sync pass
 ```
 
 ---
@@ -81,6 +85,10 @@ agent-context/
 | HTTP status and Retry-After helpers | `integrations/http.md` |
 | OpenTelemetry / Prometheus listeners | `integrations/otel.md`, `integrations/prometheus.md` |
 | uvloop / orjson detection | `integrations/perf-deps.md` |
+| Rate limits, weighted costs, server feedback | `domains/rate-limiting.md` |
+| Fallback alternatives, cooldown | `domains/fallback.md` |
+| Shared state, state backends, registry sharing | `domains/shared-state.md` |
+| Redis backend | `integrations/redis.md` |
 
 ---
 
@@ -111,12 +119,15 @@ Top-level files are universal singletons; plural folders hold variable-count ite
 | Executor pipeline | `src/pyresilience/_executor.py` | `domains/executor-pipeline.md` |
 | Retry, retry budget, `retry_on_result`, `delay_func` | `src/pyresilience/_executor.py`, `_retry_budget.py`, `_types.py` | `domains/retry.md` |
 | Circuit breaker (consecutive, sliding window) | `src/pyresilience/_circuit_breaker.py` | `domains/circuit-breaker.md` |
-| Timeout (thread pool sync, `wait_for` async) | `src/pyresilience/_executor.py` | `domains/executor-pipeline.md` |
-| Bulkhead, rate limiter, result cache | `_bulkhead.py`, `_rate_limiter.py`, `_cache.py` | `architecture.md`, `domains/executor-pipeline.md` |
-| Registry (shared named state) | `src/pyresilience/_registry.py` | `domains/executor-pipeline.md` |
+| Timeout (thread pool sync, `wait_for` async), overall deadline, stream idle timeout | `src/pyresilience/_executor.py`, `_stream.py` | `domains/executor-pipeline.md` |
+| Bulkhead, result cache | `_bulkhead.py`, `_cache.py` | `architecture.md`, `domains/executor-pipeline.md` |
+| Rate limiting (plain, weighted, multi-limit, server feedback) | `_rate_limiter.py`, `_limiter_core.py`, `_weighted_limiter.py` | `domains/rate-limiting.md` |
+| Fallback handler, alternatives, cooldown | `_fallback.py` | `domains/fallback.md` |
+| Shared state (in-process via registry, cross-process via backend) | `_parts.py`, `_backend.py`, `_shared.py`, `_shared_breaker.py`, `contrib/redis.py` | `domains/shared-state.md`, `integrations/redis.md` |
+| Registry (shared named state; sync and async share breaker, limits, budget, cooldown) | `src/pyresilience/_registry.py`, `_parts.py` | `domains/executor-pipeline.md`, `domains/shared-state.md` |
 | Presets | `src/pyresilience/_presets.py`, `presets.py` | `api-conventions.md` |
 | Events, logging, metrics, context | `src/pyresilience/_logging.py`, `_types.py` | `glossary.md` |
 | Health check, graceful shutdown | `_health.py`, `_executor.py` | `domains/executor-pipeline.md` |
-| Framework and telemetry adapters | `src/pyresilience/contrib/` | `integrations/` |
+| Framework, telemetry, HTTP and Redis adapters | `src/pyresilience/contrib/` | `integrations/` |
 
 <!-- /agent-updatable -->

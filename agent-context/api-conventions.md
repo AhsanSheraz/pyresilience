@@ -38,13 +38,13 @@ Not applicable (no HTTP surface). Import root is `pyresilience`.
 
 <!-- agent-updatable -->
 
-Enumerated from `__all__` in `src/pyresilience/__init__.py` (41 entries).
+Enumerated from `__all__` in `src/pyresilience/__init__.py` (46 entries).
 
 ### Decorator and registry
 
 | Symbol | Kind | Defined in |
 |---|---|---|
-| `resilient` | function (overloaded decorator; keyword args `retry, timeout, circuit_breaker, fallback, bulkhead, rate_limiter, cache, retry_budget, listeners`) | `_decorator.py` |
+| `resilient` | function (overloaded decorator; keyword args `retry, timeout, circuit_breaker, fallback, bulkhead, rate_limiter, cache, retry_budget, listeners, shared_state`) | `_decorator.py` |
 | `ResilienceRegistry` | class | `_registry.py` |
 | `health_check` | function (`registry -> dict`) | `_health.py` |
 
@@ -61,13 +61,30 @@ Enumerated from `__all__` in `src/pyresilience/__init__.py` (41 entries).
 | `RateLimiterConfig` | dataclass | `_types.py` |
 | `CacheConfig` | dataclass | `_types.py` |
 | `RetryBudgetConfig` | dataclass | `_types.py` |
+| `RateLimit` | dataclass: an additional limit (`max_units`, `period`, `name`, `cost`, `actual_cost`) | `_types.py` |
+| `RateLimitFeedback` | frozen dataclass: server report (`retry_after`, `remaining`) returned by `RateLimiterConfig.feedback` | `_types.py` |
+| `SharedStateConfig` | dataclass (`backend`, `key`, `sync_interval`, `fail_open`; method `sync_now()`) | `_types.py` |
+
+New config fields (all optional, defaults keep old behaviour):
+
+| Config | Field | Meaning |
+|---|---|---|
+| `TimeoutConfig` | `total_seconds` | overall deadline for all attempts and retry waits; requires `per_attempt=True` |
+| `TimeoutConfig` | `stream_idle_seconds` | idle limit between items of an iterator / async iterator result |
+| `RateLimiterConfig` | `cost`, `actual_cost` | units per call for the primary limit, and the real cost read from the result |
+| `RateLimiterConfig` | `limits` | extra `RateLimit`s enforced together with the primary limit |
+| `RateLimiterConfig` | `feedback` | callable returning `RateLimitFeedback` from each attempt's outcome |
+| `RateLimiterConfig` | `charge_retries` | debit every retry attempt against the limits |
+| `FallbackConfig` | `alternatives` | callables tried in order with the original arguments |
+| `FallbackConfig` | `cooldown`, `cooldown_threshold` | skip a failing target for `cooldown` seconds after N consecutive failures |
+| `ResilienceConfig` | `shared_state` | `SharedStateConfig`; also `@resilient(shared_state=...)` |
 
 ### Events and observability
 
 | Symbol | Kind | Defined in |
 |---|---|---|
 | `ResilienceEvent` | frozen dataclass | `_types.py` |
-| `EventType` | enum | `_types.py` |
+| `EventType` | enum (0.5.0 adds `COOLDOWN`) | `_types.py` |
 | `CircuitState` | enum | `_types.py` |
 | `ResilienceListener` | type alias `Callable[[ResilienceEvent], None]` | `_types.py` |
 | `JsonEventLogger` | class (listener) | `_logging.py` |
@@ -82,6 +99,8 @@ Enumerated from `__all__` in `src/pyresilience/__init__.py` (41 entries).
 | `RetryBudget` | class | `_retry_budget.py` |
 | `RateLimiter`, `AsyncRateLimiter` | classes | `_rate_limiter.py` |
 | `ResultCache`, `AsyncResultCache` | classes | `_cache.py` |
+| `StateBackend` | runtime-checkable Protocol (`get`, `set`, `incr`, `delete`) | `_backend.py` |
+| `InMemoryBackend` | class (thread-safe, in-process `StateBackend`) | `_backend.py` |
 
 ### Exceptions
 
@@ -96,6 +115,8 @@ See `error-handling.md`.
 | Symbol | Kind | Defined in |
 |---|---|---|
 | `http_policy`, `db_policy`, `queue_policy`, `llm_policy`, `strict_policy` | functions returning `dict[str, Any]` | `_presets.py` (also exported from `presets.py`) |
+
+`llm_policy` parameters added in 0.5.0: `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit`, `rate_limit_max_wait`. `tokens_per_minute` without `token_cost` or `token_usage` raises `ValueError`.
 
 ### Lifecycle and runtime helpers
 
@@ -119,9 +140,10 @@ See `error-handling.md`.
 | `pyresilience.contrib.fastapi` | `ResilientMiddleware`, `ResilientDependency`, `resilient_dependency` | `integrations/fastapi.md` |
 | `pyresilience.contrib.django` | `ResilientMiddleware`, `resilient_view` | `integrations/django.md` |
 | `pyresilience.contrib.flask` | `Resilience`, `resilient_route` | `integrations/flask.md` |
-| `pyresilience.contrib.http` | `retry_on_status`, `retry_after_delay` (`__all__`) | `integrations/http.md` |
+| `pyresilience.contrib.http` | `retry_on_status`, `retry_after_delay`, `rate_limit_feedback` (`__all__`) | `integrations/http.md` |
 | `pyresilience.contrib.otel` | `OpenTelemetryListener` | `integrations/otel.md` |
 | `pyresilience.contrib.prometheus` | `PrometheusListener` | `integrations/prometheus.md` |
+| `pyresilience.contrib.redis` | `RedisBackend` (`__all__`) | `integrations/redis.md` |
 
 <!-- /agent-updatable -->
 

@@ -6,6 +6,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
 if TYPE_CHECKING:
+    from pyresilience._parts import _Parts
     from pyresilience._types import ResilienceConfig
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -15,7 +16,10 @@ class ResilienceRegistry:
     """Centralized registry for named resilience configurations.
 
     Allows sharing circuit breaker state, rate limiters, and other
-    resilience components across multiple decorated functions.
+    resilience components across multiple decorated functions. Sync and async
+    functions registered under one name share the same circuit breaker, rate
+    limits, retry budget and fallback cooldown state. Bulkhead slots and cached
+    results stay separate per call style.
 
     Usage::
 
@@ -38,6 +42,8 @@ class ResilienceRegistry:
         self._lock = threading.Lock()
         self._configs: dict[str, ResilienceConfig] = {}
         self._executors: dict[str, Any] = {}
+        # Stateful parts per name, shared by the sync and the async executor
+        self._parts: dict[str, _Parts] = {}
         self._default_config: Optional[ResilienceConfig] = None
 
     def set_default(self, config: ResilienceConfig) -> None:
@@ -49,8 +55,8 @@ class ResilienceRegistry:
         """Register a named resilience configuration."""
         with self._lock:
             self._configs[name] = config
-            # Clear cached executor so it's rebuilt with new config
-            self._executors.pop(name, None)
+            # Drop cached executors and state so they are rebuilt with the new config
+            self._drop(name)
 
     def get(self, name: str) -> Optional[ResilienceConfig]:
         """Get a registered config by name. Returns None if not found."""
@@ -67,6 +73,12 @@ class ResilienceRegistry:
                 return self._default_config
             raise KeyError(f"No config registered for '{name}' and no default set")
 
+    def _drop(self, name: str) -> None:
+        """Forget the executors and shared state of a name. Caller holds the lock."""
+        self._executors.pop(f"{name}:async", None)
+        self._executors.pop(f"{name}:sync", None)
+        self._parts.pop(name, None)
+
     def _get_executor(self, name: str, is_async: bool) -> Any:
         """Get or create a cached executor for a named config."""
         key = f"{name}:{'async' if is_async else 'sync'}"
@@ -80,14 +92,21 @@ class ResilienceRegistry:
             if config is None:
                 raise KeyError(f"No config registered for '{name}' and no default set")
 
+            parts = self._parts.get(name)
+            if parts is None:
+                from pyresilience._parts import _build_parts
+
+                parts = _build_parts(config, name)
+                self._parts[name] = parts
+
             if is_async:
                 from pyresilience._executor import _AsyncExecutor
 
-                result: Any = _AsyncExecutor(config)
+                result: Any = _AsyncExecutor(config, shared=parts)
             else:
                 from pyresilience._executor import _SyncExecutor
 
-                result = _SyncExecutor(config)
+                result = _SyncExecutor(config, shared=parts)
 
             self._executors[key] = result
             return result
@@ -146,9 +165,7 @@ class ResilienceRegistry:
         with self._lock:
             existed = name in self._configs
             self._configs.pop(name, None)
-            # Also remove cached executors
-            self._executors.pop(f"{name}:async", None)
-            self._executors.pop(f"{name}:sync", None)
+            self._drop(name)
             return existed
 
     def clear(self) -> None:
@@ -156,4 +173,5 @@ class ResilienceRegistry:
         with self._lock:
             self._configs.clear()
             self._executors.clear()
+            self._parts.clear()
             self._default_config = None

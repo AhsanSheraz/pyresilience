@@ -59,15 +59,18 @@ All patterns work together, with a unified event system for observability.
 - **Sliding window circuit breaker** — failure rate % threshold, slow call detection
 - **Retry on result** — retry based on return values, not just exceptions
 - **Retry budget** — shared token pool limits cascading retries across callers
-- **Per-attempt timeout** — per-call or total deadline timeout modes
+- **Composable timeouts** — per-attempt limit, overall deadline, or both, plus a stream idle timeout
+- **LLM-grade rate limiting** — several limits at once, weighted calls, token reconciliation, limits that follow `Retry-After` and rate-limit headers
+- **Fallback alternatives with cooldown** — route a failing call to another provider and skip the one that is down
+- **Shared state** — one circuit breaker, rate limit and retry budget across processes through a pluggable backend (in-memory, Redis)
 - **Context propagation** — request-scoped metadata in every event via `resilience_context`
-- **Opinionated presets** — `http_policy()`, `db_policy()`, `queue_policy()`
+- **Opinionated presets** — `http_policy()`, `db_policy()`, `queue_policy()`, `strict_policy()`, `llm_policy()`
 - **Production observability** — JSON logging, metrics, OpenTelemetry spans, Prometheus counters/histograms
 - **Health check** — inspect circuit breaker states, in-flight calls, rate limiter availability
 - **Graceful shutdown** — drain in-flight calls with configurable timeout
 - **Optional performance backends** — uvloop + orjson
-- **Python 3.9+** — tested on 3.9 through 3.14
-- **Production/Stable** — 365 tests, 96% branch coverage, 10.4x faster than tenacity
+- **Python 3.9+** — CI tests 3.10 through 3.15 on Linux, macOS and Windows
+- **Production/Stable** — 863 tests, 98% branch coverage, 10.4x faster than tenacity
 
 ## Why Not Just Tenacity + PyBreaker?
 

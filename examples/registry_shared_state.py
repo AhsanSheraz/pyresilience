@@ -2,6 +2,7 @@
 
 from pyresilience import (
     CircuitBreakerConfig,
+    CircuitOpenError,
     ResilienceConfig,
     ResilienceRegistry,
     RetryConfig,
@@ -40,7 +41,7 @@ if __name__ == "__main__":
     for i in range(4):
         try:
             charge_card(100.0)
-        except (ConnectionError, RuntimeError) as e:
+        except (ConnectionError, CircuitOpenError) as e:
             print(f"charge_card attempt {i + 1}: {e}")
 
     # Now refund_card is ALSO blocked because they share the circuit breaker
@@ -48,6 +49,6 @@ if __name__ == "__main__":
     try:
         result = refund_card(50.0)
         print(f"refund_card: {result}")
-    except RuntimeError as e:
+    except CircuitOpenError as e:
         print(f"refund_card blocked: {e}")
         print("\n(Circuit breaker is shared — charge_card failures blocked refund_card too)")

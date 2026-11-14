@@ -137,7 +137,11 @@ The fallback is checked when:
 - The **rate limiter** rejects a call
 - The **bulkhead** is full
 - All **retries** are exhausted
+- The overall **deadline** (`total_seconds`) is spent
 - A non-retryable exception occurs
+
+A fallback can be a value, a handler, or a list of alternatives that receive the original
+arguments, with an optional cooldown for targets that keep failing. See [Fallback](../core/fallback.md).
 
 ### Default Constructor
 

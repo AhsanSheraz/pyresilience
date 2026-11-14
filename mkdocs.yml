@@ -43,8 +43,10 @@ nav:
       - TimeLimiter: core/timelimiter.md
       - RateLimiter: core/ratelimiter.md
       - Cache: core/cache.md
+      - Fallback: core/fallback.md
   - Advanced:
       - Registry: advanced/registry.md
+      - Shared State: advanced/shared-state.md
       - Presets: advanced/presets.md
       - HTTP & LLM Helpers: advanced/http.md
       - Observability: advanced/observability.md

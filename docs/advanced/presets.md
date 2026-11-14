@@ -133,6 +133,9 @@ def ask_model(prompt: str):
 | Rate limiter | 60 calls / 60s | Client-side smoothing to avoid 429s proactively |
 | Circuit failure threshold | 5 | Stop hammering a failing provider |
 | Circuit recovery | 30s | Re-probe after a short cool-down |
+| `tokens_per_minute` | off | Optional token limit next to the call limit; needs `token_cost` or `token_usage` |
+| `adaptive_rate_limit` | off | Follow `Retry-After` and rate-limit headers reported by the server |
+| `rate_limit_max_wait` | 0s | How long a call waits for rate-limit capacity before it is rejected |
 
 **Customizable:**
 
@@ -145,6 +148,22 @@ def ask_model(prompt: str):
 ))
 def ask_model(prompt: str): ...
 ```
+
+**Token limits and server feedback:**
+
+```python
+@resilient(**llm_policy(
+    tokens_per_minute=90_000,
+    token_cost=lambda prompt: len(prompt) // 4 + 256,          # reserved before the call
+    token_usage=lambda response: response.usage.total_tokens,  # settled after the call
+    adaptive_rate_limit=True,
+    rate_limit_max_wait=10.0,
+))
+def ask_model(prompt: str): ...
+```
+
+With `tokens_per_minute` set, retries are charged against the limits as well, because every
+retry spends real tokens. See [RateLimiter](../core/ratelimiter.md#token-limits-for-llm-apis).
 
 `ignore_on` propagates to **both** the retry and the circuit breaker configs — terminal client
 errors fail fast and don't trip the circuit. See [HTTP & LLM Helpers](http.md) for the underlying

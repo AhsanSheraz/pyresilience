@@ -24,13 +24,14 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence, Type
+from typing import Any, Callable, Optional, Sequence, Type
 
 from pyresilience._types import (
     BulkheadConfig,
     CacheConfig,
     CircuitBreakerConfig,
     FallbackConfig,
+    RateLimit,
     RateLimiterConfig,
     ResilienceListener,
     RetryConfig,
@@ -230,6 +231,11 @@ def llm_policy(
     listeners: Optional[list[ResilienceListener]] = None,
     retry_on: Optional[Sequence[Type[BaseException]]] = None,
     ignore_on: Optional[Sequence[Type[BaseException]]] = None,
+    tokens_per_minute: Optional[int] = None,
+    token_cost: Optional[Callable[..., float]] = None,
+    token_usage: Optional[Callable[[Any], Optional[float]]] = None,
+    adaptive_rate_limit: bool = False,
+    rate_limit_max_wait: float = 0.0,
 ) -> dict[str, Any]:
     """Resilience policy optimized for LLM/HTTP API calls with 429/Retry-After-aware retrying.
 
@@ -265,9 +271,24 @@ def llm_policy(
         retry_on: Additional exception types to retry on. Defaults to (Exception,).
         ignore_on: Exception types that are never retried and never counted as circuit failures.
             Useful for terminal errors like auth failures or invalid-request errors.
+        tokens_per_minute: Optional token limit enforced together with the call limit
+            (a second limit named ``"tokens"`` with a 60s period). Requires ``token_cost``
+            or ``token_usage``. None (default) disables it.
+        token_cost: Callable that receives the call's arguments and returns the estimated
+            tokens the call will use. The estimate is reserved before the call.
+        token_usage: Callable that receives the call's result and returns the tokens really
+            used (or None). The difference to the estimate is given back or charged.
+        adaptive_rate_limit: If True, the limiter follows the server: ``Retry-After`` pauses
+            it, and ``x-ratelimit-*`` / ``anthropic-ratelimit-*`` headers lower its levels.
+            Pauses are capped at ``retry_after_max_wait``. Defaults to False.
+        rate_limit_max_wait: Max seconds a call waits for rate-limit capacity before it is
+            rejected. Defaults to 0.0 (reject immediately).
     """
     # Lazy import — contrib.http is an optional dependency; avoids import at module load time
-    from pyresilience.contrib.http import retry_after_delay, retry_on_status
+    from pyresilience.contrib.http import rate_limit_feedback, retry_after_delay, retry_on_status
+
+    if tokens_per_minute is not None and token_cost is None and token_usage is None:
+        raise ValueError("tokens_per_minute requires token_cost or token_usage")
 
     retry_config = RetryConfig(
         max_attempts=max_attempts,
@@ -288,7 +309,29 @@ def llm_policy(
         "retry": retry_config,
         "timeout": TimeoutConfig(seconds=timeout_seconds),
         "circuit_breaker": circuit_breaker_config,
-        "rate_limiter": RateLimiterConfig(max_calls=max_calls, period=period),
+        "rate_limiter": RateLimiterConfig(
+            max_calls=max_calls,
+            period=period,
+            max_wait=rate_limit_max_wait,
+            limits=(
+                (
+                    RateLimit(
+                        max_units=tokens_per_minute,
+                        period=60.0,
+                        name="tokens",
+                        cost=token_cost,
+                        actual_cost=token_usage,
+                    ),
+                )
+                if tokens_per_minute is not None
+                else ()
+            ),
+            feedback=(
+                rate_limit_feedback(max_pause=retry_after_max_wait) if adaptive_rate_limit else None
+            ),
+            # Retries spend real tokens, so they are debited once token limits are in play
+            charge_retries=tokens_per_minute is not None,
+        ),
     }
     if max_concurrent is not None:
         policy["bulkhead"] = BulkheadConfig(max_concurrent=max_concurrent)

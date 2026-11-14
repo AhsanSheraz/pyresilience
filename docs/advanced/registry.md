@@ -149,8 +149,10 @@ configure_resilience()
 The key benefit of the registry is **shared state**. Functions using the same registry name share:
 
 - **Circuit breaker state** — if one function trips the circuit, all functions under the same name are blocked
-- **Rate limiter tokens** — all functions share the same token bucket
-- **Bulkhead slots** — concurrent calls across all functions count toward the same limit
+- **Rate limiter tokens** — all functions share the same limits
+- **Retry budget** — all functions draw on the same budget
+- **Fallback cooldown** — a target that is cooling down is skipped by all functions
+- **Bulkhead slots** — concurrent calls across all functions of one call style count toward the same limit
 
 This models real-world dependencies: if the payment API is down, all payment operations should fail fast — not just the one that discovered the failure.
 
@@ -168,5 +170,9 @@ async def async_charge(amount: float) -> dict:
     return await payment_client.async_charge(amount)
 ```
 
+Sync and async functions under one name share the circuit breaker, the rate limits, the retry budget and the fallback cooldown state: if `sync_charge` opens the circuit, `async_charge` is blocked too, and both count against the same rate limit.
+
 !!! note
-    Sync and async executors are created separately, so they have independent circuit breaker instances even under the same registry name. This is intentional — sync and async code paths typically run in different contexts.
+    Bulkhead slots and cached results stay separate per call style. Sync functions share them with other sync functions, async functions with other async functions.
+
+To share state between **processes** as well, add a `SharedStateConfig` to the registered config. See [Shared State](shared-state.md).

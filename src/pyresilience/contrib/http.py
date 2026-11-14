@@ -25,11 +25,15 @@ Usage::
 
 from __future__ import annotations
 
+import datetime
 import email.utils
+import re
 import time
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Sequence, Union
 
-__all__ = ["retry_after_delay", "retry_on_status"]
+from pyresilience._types import PRIMARY_LIMIT_NAME, RateLimitFeedback
+
+__all__ = ["rate_limit_feedback", "retry_after_delay", "retry_on_status"]
 
 
 def retry_on_status(*codes: int) -> Callable[[Any], bool]:
@@ -169,3 +173,185 @@ def retry_after_delay(
             return None
 
     return _delay_func
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit header feedback
+# ---------------------------------------------------------------------------
+
+# Header names, lower-case. First match wins.
+_REMAINING_CALLS = (
+    "x-ratelimit-remaining-requests",
+    "anthropic-ratelimit-requests-remaining",
+    "x-ratelimit-remaining",
+    "ratelimit-remaining",
+)
+_RESET_CALLS = (
+    "x-ratelimit-reset-requests",
+    "anthropic-ratelimit-requests-reset",
+    "x-ratelimit-reset",
+    "ratelimit-reset",
+)
+_REMAINING_TOKENS = (
+    "x-ratelimit-remaining-tokens",
+    "anthropic-ratelimit-tokens-remaining",
+)
+_RESET_TOKENS = (
+    "x-ratelimit-reset-tokens",
+    "anthropic-ratelimit-tokens-reset",
+)
+
+# "6m0s", "1s", "20ms", "1h2m3.5s"
+_DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
+_DURATION_UNITS = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}
+# Numbers above this are absolute epoch timestamps, not seconds-from-now
+_EPOCH_THRESHOLD = 1_000_000_000.0
+
+
+def _get_headers(trigger: Any) -> Any:
+    """Return the headers mapping of a response, or of an exception's response."""
+    headers: Any = getattr(trigger, "headers", None)
+    if headers is None:
+        response: Any = getattr(trigger, "response", None)
+        if response is not None:
+            headers = getattr(response, "headers", None)
+    return headers
+
+
+def _first_header(headers: Any, names: Sequence[str]) -> Optional[str]:
+    """Return the first header among *names* (lower-case), matched case-insensitively."""
+    for name in names:
+        value: Any = headers.get(name)
+        if value is not None:
+            return str(value)
+    # Plain dicts are case-sensitive: fall back to a lower-cased scan
+    items: Any = getattr(headers, "items", None)
+    if items is None:
+        return None
+    lowered = {str(key).lower(): value for key, value in items()}
+    for name in names:
+        value = lowered.get(name)
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _parse_number(raw: Optional[str]) -> Optional[float]:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+def _parse_reset(raw: Optional[str]) -> Optional[float]:
+    """Parse a rate-limit reset header into seconds from now.
+
+    Accepts seconds from now (``"30"``), an epoch timestamp in seconds or
+    milliseconds, a duration (``"6m0s"``, ``"20ms"``), an RFC 3339 timestamp, or
+    an HTTP-date. Returns None when the value cannot be parsed.
+    """
+    if raw is None:
+        return None
+    raw = raw.strip()
+    number = _parse_number(raw)
+    if number is not None:
+        if number > _EPOCH_THRESHOLD * 1000:
+            return max(0.0, number / 1000.0 - time.time())
+        if number > _EPOCH_THRESHOLD:
+            return max(0.0, number - time.time())
+        return max(0.0, number)
+
+    parts = _DURATION_PART.findall(raw)
+    if parts and "".join(value + unit for value, unit in parts) == raw:
+        return sum(float(value) * _DURATION_UNITS[unit] for value, unit in parts)
+
+    try:
+        moment = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            moment = email.utils.parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return max(0.0, moment.timestamp() - time.time())
+
+
+def rate_limit_feedback(
+    *,
+    calls_limit: str = PRIMARY_LIMIT_NAME,
+    tokens_limit: str = "tokens",
+    max_pause: float = 60.0,
+) -> Callable[[Any], Optional[RateLimitFeedback]]:
+    """Return a ``feedback`` function that reads rate-limit headers.
+
+    Suitable for ``RateLimiterConfig.feedback``. It inspects each attempt's
+    response (or the response attached to a raised exception) and reports:
+
+    - ``Retry-After`` (delta-seconds or HTTP-date): pause the limiter.
+    - Remaining requests (``x-ratelimit-remaining-requests``,
+      ``anthropic-ratelimit-requests-remaining``, ``x-ratelimit-remaining``,
+      ``RateLimit-Remaining``): lower the ``calls_limit`` level.
+    - Remaining tokens (``x-ratelimit-remaining-tokens``,
+      ``anthropic-ratelimit-tokens-remaining``): lower the ``tokens_limit`` level.
+    - When a remaining value is 0 and the matching reset header is present, pause
+      until the reset.
+
+    Works duck-typed with requests, httpx and aiohttp responses and with plain
+    dict headers. Unparseable or missing headers are ignored.
+
+    Args:
+        calls_limit: Name of the limit that counts requests. Defaults to ``"calls"``,
+            the primary limit.
+        tokens_limit: Name of the limit that counts tokens. Defaults to ``"tokens"``.
+        max_pause: Upper bound (seconds) for any pause. Defaults to 60.0.
+
+    Returns:
+        A callable ``(outcome) -> Optional[RateLimitFeedback]``.
+
+    Raises:
+        ValueError: When *max_pause* is <= 0.
+    """
+    if max_pause <= 0:
+        raise ValueError("max_pause must be > 0")
+
+    sources = (
+        (calls_limit, _REMAINING_CALLS, _RESET_CALLS),
+        (tokens_limit, _REMAINING_TOKENS, _RESET_TOKENS),
+    )
+
+    def _feedback(outcome: Any) -> Optional[RateLimitFeedback]:
+        try:
+            headers = _get_headers(outcome)
+            if headers is None:
+                return None
+
+            pause: Optional[float] = None
+            raw_retry_after = _first_header(headers, ("retry-after",))
+            if raw_retry_after is not None:
+                delay = _parse_retry_after(raw_retry_after)
+                if delay is not None and delay > 0:
+                    pause = delay
+
+            remaining: dict[str, float] = {}
+            for limit_name, remaining_names, reset_names in sources:
+                left = _parse_number(_first_header(headers, remaining_names))
+                if left is None:
+                    continue
+                remaining[limit_name] = left
+                if left <= 0:
+                    reset = _parse_reset(_first_header(headers, reset_names))
+                    if reset is not None and reset > 0 and (pause is None or reset > pause):
+                        pause = reset
+
+            if pause is None and not remaining:
+                return None
+            if pause is not None and pause > max_pause:
+                pause = max_pause
+            return RateLimitFeedback(retry_after=pause, remaining=remaining or None)
+        except Exception:
+            return None
+
+    return _feedback

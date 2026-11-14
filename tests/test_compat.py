@@ -79,20 +79,21 @@ class TestCompat:
 
 class TestDeprecatedApiFixes:
     def test_executor_uses_inspect_iscoroutinefunction(self) -> None:
-        """_executor.py uses inspect.iscoroutinefunction, not asyncio.iscoroutinefunction."""
+        """Async handler detection uses inspect.iscoroutinefunction, not the asyncio one."""
         import pathlib
 
-        executor_source = (
-            pathlib.Path(__file__).parent.parent / "src" / "pyresilience" / "_executor.py"
-        )
-        content = executor_source.read_text()
+        package = pathlib.Path(__file__).parent.parent / "src" / "pyresilience"
+        # The fallback helpers (and their coroutine check) live in _fallback.py
+        fallback_source = (package / "_fallback.py").read_text(encoding="utf-8")
+        executor_source = (package / "_executor.py").read_text(encoding="utf-8")
 
         # Should import inspect
-        assert "import inspect" in content
+        assert "import inspect" in fallback_source
         # Should use inspect.iscoroutinefunction
-        assert "inspect.iscoroutinefunction" in content
+        assert "inspect.iscoroutinefunction" in fallback_source
         # Should NOT use asyncio.iscoroutinefunction
-        assert "asyncio.iscoroutinefunction" not in content
+        assert "asyncio.iscoroutinefunction" not in fallback_source
+        assert "asyncio.iscoroutinefunction" not in executor_source
 
     def test_install_uvloop_does_not_use_get_event_loop_policy(self) -> None:
         """install_uvloop() should not use deprecated asyncio.get_event_loop_policy()."""

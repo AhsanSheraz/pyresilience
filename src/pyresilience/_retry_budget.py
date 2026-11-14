@@ -37,6 +37,11 @@ class RetryBudget:
                 return True
             return False
 
+    def refund(self) -> None:
+        """Give back one retry token that was acquired but not used."""
+        with self._lock:
+            self._tokens = min(self._capacity, self._tokens + 1.0)
+
     def _refill(self) -> None:
         now = _monotonic()
         elapsed = now - self._last_refill

@@ -23,9 +23,9 @@ Where each exception is raised by the library.
 | Exception | Raised by | Condition | Fallback applies? |
 |---|---|---|---|
 | `CircuitOpenError` | executor | circuit open before the call, or open when re-checked before retry attempt > 1 | Yes, when a `FallbackConfig` is set (the pre-call checks call the fallback whenever `fallback_cfg is not None`, regardless of `fallback_on`; the retry-loop re-check honours `fallback_on`) |
-| `RateLimitExceededError` | executor | `rate_limiter.acquire()` returned False | Same as above (pre-call check) |
+| `RateLimitExceededError` | executor | `rate_limiter.acquire()` returned False; weighted limiter: message `Rate limit exceeded (<limit name>)`; shared limits with `fail_open=False` while the backend is down | Same as above (pre-call check) |
 | `BulkheadFullError` | executor | `bulkhead.acquire()` returned False, or slot could not be re-acquired after retry sleep | Pre-call: yes. Re-acquire after sleep: raised directly, no fallback |
-| `ResilienceTimeoutError` | executor timeout path (`_execute_with_timeout`, total-deadline check); also injected into a timed-out worker thread via `_interrupt_thread` on CPython | per-attempt timeout, or total deadline exhausted | Goes through normal retry/circuit/fallback handling as an `Exception` |
+| `ResilienceTimeoutError` | executor timeout path (`_execute_with_timeout`, total-deadline check); also injected into a timed-out worker thread via `_interrupt_thread` on CPython | per-attempt timeout, overall deadline exhausted (`_on_total_timeout`), or a stream idle for longer than `stream_idle_seconds` (raised from the wrapped iterator, after the call returned) | Goes through normal retry/circuit/fallback handling as an `Exception` |
 
 ## Custom Exception Classes
 
@@ -40,15 +40,17 @@ Where each exception is raised by the library.
 | Config | Message raised |
 |---|---|
 | `RetryConfig` | `max_attempts must be >= 1`; `delay must be >= 0`; `max_delay must be >= 0` |
-| `TimeoutConfig` | `seconds must be > 0`; `pool_size must be >= 1` |
+| `TimeoutConfig` | `seconds must be > 0`; `pool_size must be >= 1`; `total_seconds must be > 0`; `total_seconds requires per_attempt=True`; `stream_idle_seconds must be > 0` |
 | `CircuitBreakerConfig` | `failure_threshold must be >= 1`; `recovery_timeout must be >= 0`; `failure_rate_threshold must be between 0.0 and 1.0` |
-| `FallbackConfig` | no raise: when `handler is None`, `fallback_on` is forced to `()` |
+| `FallbackConfig` | `cooldown must be >= 0`; `cooldown_threshold must be >= 1`; no other raise: when there is no handler and no alternatives, `fallback_on` is forced to `()` |
 | `BulkheadConfig` | `max_concurrent must be >= 1` |
-| `RateLimiterConfig` | `max_calls must be >= 1`; `period must be > 0` |
+| `RateLimiterConfig` | `max_calls must be >= 1`; `period must be > 0`; `limit names must be unique` |
+| `RateLimit` | `max_units must be > 0`; `period must be > 0` |
+| `SharedStateConfig` | `sync_interval must be >= 0`; a missing key (no `key`, no registry name) raises `shared_state needs a key: set SharedStateConfig.key` when parts are built |
 | `CacheConfig` | `max_size must be >= 1`; `ttl must be >= 0` |
 | `RetryBudgetConfig` | `max_retries must be >= 1`; `refill_rate must be > 0` |
 
-Other validation: `contrib/http.py` `retry_on_status()` raises `ValueError` with no codes and `TypeError` for non-int codes; `retry_after_delay()` raises `ValueError("max_wait must be > 0")`. Optional-dependency listeners raise `ImportError` at construction (`OpenTelemetryListener`, `PrometheusListener`); Flask `Resilience.executor` raises `RuntimeError` before `init_app()`; `ResilienceRegistry.get_or_default` / decorator creation raises `KeyError` for unknown names with no default.
+Other validation: `contrib/http.py` `retry_on_status()` raises `ValueError` with no codes and `TypeError` for non-int codes; `retry_after_delay()` raises `ValueError("max_wait must be > 0")`; `rate_limit_feedback()` raises `ValueError("max_pause must be > 0")`; `llm_policy(tokens_per_minute=...)` without `token_cost` or `token_usage` raises `ValueError("tokens_per_minute requires token_cost or token_usage")`. Optional-dependency listeners raise `ImportError` at construction (`OpenTelemetryListener`, `PrometheusListener`); Flask `Resilience.executor` raises `RuntimeError` before `init_app()`; `ResilienceRegistry.get_or_default` / decorator creation raises `KeyError` for unknown names with no default.
 
 <!-- /agent-updatable -->
 
