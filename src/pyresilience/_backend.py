@@ -16,6 +16,9 @@ import time
 from typing import Optional, Protocol, runtime_checkable
 
 _monotonic = time.monotonic
+# InMemoryBackend looks for expired entries when it holds this many, and from then
+# on each time it has doubled since the last look
+_SWEEP_AT = 64
 
 
 @runtime_checkable
@@ -51,12 +54,31 @@ class InMemoryBackend:
     stands in for a real backend in tests. It does not cross process boundaries.
     """
 
-    __slots__ = ("_data", "_lock")
+    __slots__ = ("_data", "_lock", "_sweep_at")
 
     def __init__(self) -> None:
         # key -> (value, expiry on the monotonic clock or None)
         self._data: dict[str, tuple[str, Optional[float]]] = {}
         self._lock = threading.Lock()
+        self._sweep_at = _SWEEP_AT
+
+    def _sweep(self) -> None:
+        """Drop expired entries. The caller holds the lock.
+
+        A key that is never read again (the counter of a past rate-limit window)
+        would otherwise stay for ever.
+        """
+        now = _monotonic()
+        data = self._data
+        expired = [
+            key
+            for key, (_, expires_at) in data.items()
+            if expires_at is not None and now >= expires_at
+        ]
+        for key in expired:
+            del data[key]
+        # Look again when the store has doubled: the cost per write stays constant
+        self._sweep_at = max(_SWEEP_AT, 2 * len(data))
 
     def _live(self, key: str) -> Optional[str]:
         entry = self._data.get(key)
@@ -75,6 +97,8 @@ class InMemoryBackend:
     def set(self, key: str, value: str, ttl: Optional[float] = None) -> None:
         with self._lock:
             self._data[key] = (value, _monotonic() + ttl if ttl is not None else None)
+            if len(self._data) >= self._sweep_at:
+                self._sweep()
 
     def incr(self, key: str, amount: float, ttl: Optional[float] = None) -> float:
         with self._lock:
@@ -86,6 +110,8 @@ class InMemoryBackend:
                 entry = self._data.get(key)
                 expires_at = entry[1] if entry is not None else None
             self._data[key] = (repr(total), expires_at)
+            if len(self._data) >= self._sweep_at:
+                self._sweep()
             return total
 
     def delete(self, key: str) -> None:

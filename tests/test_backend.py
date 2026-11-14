@@ -130,6 +130,29 @@ class TestInMemoryBackend:
         time.sleep(0.1)
         assert backend.keys() == ["stays"]
 
+    def test_expired_counters_are_dropped_without_being_read(self) -> None:
+        backend = InMemoryBackend()
+        backend.set("stays", "1")
+        for index in range(300):
+            backend.incr(f"old:{index}", 1.0, ttl=0.01)
+        time.sleep(0.1)
+        # Nothing reads the old keys again; writing new ones clears them out
+        for index in range(300):
+            backend.incr(f"new:{index}", 1.0, ttl=60.0)
+        assert len(backend._data) == 301
+        assert backend.get("stays") == "1"
+        assert backend.get("new:0") == "1.0"
+
+    def test_expired_values_are_dropped_without_being_read(self) -> None:
+        backend = InMemoryBackend()
+        for index in range(300):
+            backend.set(f"old:{index}", "x", ttl=0.01)
+        time.sleep(0.1)
+        for index in range(300):
+            backend.set(f"new:{index}", "y", ttl=60.0)
+        assert len(backend._data) == 300
+        assert backend.get("new:299") == "y"
+
     def test_incr_is_atomic_across_threads(self) -> None:
         backend = InMemoryBackend()
 
