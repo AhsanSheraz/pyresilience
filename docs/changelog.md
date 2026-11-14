@@ -13,7 +13,7 @@
 - **`llm_policy()` options**: `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit`, `rate_limit_max_wait` (defaults unchanged)
 - **Fallback alternatives**: `FallbackConfig.alternatives` are tried in order with the original arguments before the handler. See [Fallback](core/fallback.md)
 - **Fallback cooldown**: `cooldown` and `cooldown_threshold` skip a target that keeps failing; new `EventType.COOLDOWN`
-- **Shared state across processes**: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state; `InMemoryBackend` in the core, `contrib.redis.RedisBackend` around a Redis client you supply. Still zero dependencies. Works in forked workers, and a backend outage costs one slow call per pause instead of one per call. See [Shared State](advanced/shared-state.md)
+- **Shared state across processes**: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state; `InMemoryBackend` in the core, `contrib.redis.RedisBackend` around a Redis client you supply. Still zero dependencies. Works in forked workers, and during a backend outage one call at a time waits for the backend instead of every call. See [Shared State](advanced/shared-state.md)
 - **Python 3.15**: supported and tested in CI
 
 ### Changes
@@ -29,7 +29,7 @@
 - New `benchmarks/bench_new_features.py` and `benchmarks/bench_compare.py`; results in [Performance](advanced/performance.md)
 
 ### Tests
-- 846 tests (up from 464), 98% branch coverage
+- 859 tests (up from 464), 98% branch coverage
 - Passing on Python 3.15.1
 
 ---

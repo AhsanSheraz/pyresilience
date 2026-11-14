@@ -164,6 +164,7 @@ async for chunk in await stream_completion("hello"):
 - The wait for the first item is the time to first token.
 - Each sync stream is read by its own daemon thread, started with the first item, so any number of streams can run at once. A read that is abandoned keeps that thread busy, and the underlying stream open, until the read returns.
 - The body of a sync stream runs in a copy of the caller's context, taken at the first item: context variables set by the caller are visible in it, changes made inside it do not reach the caller.
+- Because that body runs in another thread, objects tied to the thread that created them cannot be used in it: a `sqlite3` connection opened by the caller raises `ProgrammingError`, and `threading.local` values set by the caller are not there. Create such objects inside the stream.
 - Handing each item of a sync stream from one thread to the other costs far more than the async guard (see [Performance](../advanced/performance.md)). It does not matter for network streams; think twice for streams of many small in-memory items.
 - After a timeout the stream is finished. Retries and fallbacks do not cover a stream that already started.
 - `with` / `async with`, `close()`, `aclose()` and other attributes are passed through to the wrapped stream.
