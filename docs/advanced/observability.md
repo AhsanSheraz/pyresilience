@@ -31,6 +31,7 @@ class ResilienceEvent:
 | `CIRCUIT_HALF_OPEN` | Circuit breaker entered half-open state |
 | `CIRCUIT_CLOSED` | Circuit breaker closed (recovered) |
 | `FALLBACK_USED` | A fallback value was returned |
+| `COOLDOWN` | A fallback target entered cooldown after repeated failures |
 | `BULKHEAD_REJECTED` | A call was rejected by the bulkhead |
 | `RATE_LIMITED` | A call was rejected by the rate limiter |
 | `CACHE_HIT` | A cached result was returned |

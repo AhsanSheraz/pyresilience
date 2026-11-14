@@ -15,7 +15,9 @@ The main decorator that applies resilience patterns.
     bulkhead=BulkheadConfig(...),
     rate_limiter=RateLimiterConfig(...),
     cache=CacheConfig(...),
+    retry_budget=RetryBudgetConfig(...),
     listeners=[...],
+    shared_state=SharedStateConfig(...),
 )
 ```
 
@@ -44,6 +46,8 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `seconds` | `float` | `30.0` | Timeout duration |
 | `per_attempt` | `bool` | `True` | Per-attempt timeout (`True`) or total deadline (`False`) |
 | `pool_size` | `int` | `4` | Thread pool size for sync timeouts |
+| `total_seconds` | `Optional[float]` | `None` | Overall deadline for all attempts and retry waits, on top of the per-attempt `seconds`. Requires `per_attempt=True` |
+| `stream_idle_seconds` | `Optional[float]` | `None` | Max wait for the first item and between items when the result is an iterator or async iterator |
 
 ### `CircuitBreakerConfig`
 
@@ -78,9 +82,12 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `handler` | `Callable or Any` | `None` | Fallback value, `fn(exc)`, or async `fn(exc)`. When `None`, `fallback_on` is auto-cleared to `()` |
-| `fallback_on` | `Sequence[Type]` | `(Exception,)` | Exceptions triggering fallback. Auto-cleared when `handler=None` |
+| `fallback_on` | `Sequence[Type]` | `(Exception,)` | Exceptions triggering fallback. Auto-cleared when there is no handler and no alternative |
+| `alternatives` | `Sequence[Callable]` | `()` | Callables tried in order with the original arguments before the handler |
+| `cooldown` | `float` | `0.0` | Seconds a failing target (the function or an alternative) is skipped. `0` disables |
+| `cooldown_threshold` | `int` | `1` | Consecutive failures that start a cooldown |
 
-`FallbackConfig()` is safe to call with no arguments. The handler can be an async function when decorating async functions.
+`FallbackConfig()` is safe to call with no arguments. The handler can be an async function when decorating async functions. See [Fallback](core/fallback.md).
 
 ### `BulkheadConfig`
 
@@ -96,6 +103,32 @@ Can also be used bare: `@resilient` applies default retry (3 attempts).
 | `max_calls` | `int` | `10` | Max calls allowed per period |
 | `period` | `float` | `1.0` | Time period in seconds |
 | `max_wait` | `float` | `0.0` | Max wait for token (0=reject immediately) |
+| `cost` | `Optional[Callable[..., float]]` | `None` | Units of the primary limit a call consumes, from its arguments (default 1) |
+| `actual_cost` | `Optional[Callable[[Any], Optional[float]]]` | `None` | Units really consumed, from the result; the difference to `cost` is settled |
+| `limits` | `Sequence[RateLimit]` | `()` | Additional limits enforced together with the primary limit (named `"calls"`) |
+| `feedback` | `Optional[Callable[[Any], Optional[RateLimitFeedback]]]` | `None` | Reads the server's own limits from each attempt's result or exception |
+| `charge_retries` | `bool` | `False` | Debit every retry attempt against the limits |
+
+### `RateLimit`
+
+One additional limit of a `RateLimiterConfig`.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_units` | `float` | required | Units allowed per period |
+| `period` | `float` | required | Time period in seconds |
+| `name` | `str` | `"limit<N>"` | Name used in events, errors and feedback |
+| `cost` | `Optional[Callable[..., float]]` | `None` | Units a call consumes, from its arguments (default 1) |
+| `actual_cost` | `Optional[Callable[[Any], Optional[float]]]` | `None` | Units really consumed, from the result |
+
+### `RateLimitFeedback`
+
+Returned by a `feedback` function. Frozen dataclass.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `retry_after` | `Optional[float]` | `None` | Seconds during which no call should be sent; pauses the limiter |
+| `remaining` | `Optional[Mapping[str, float]]` | `None` | Limit name to units left on the server; lowers the local level, never raises it |
 
 ### `CacheConfig`
 
@@ -121,6 +154,38 @@ Centralized management of named resilience configurations.
 | `clear()` | Remove all configs |
 | `names` | List all registered names |
 
+Sync and async functions under one name share the circuit breaker, rate limits, retry budget and fallback cooldown state. `register()` on an existing name drops its executors and state.
+
+### `SharedStateConfig`
+
+Shares circuit breaker, rate limit and retry budget state between processes. See [Shared State](advanced/shared-state.md).
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `backend` | `StateBackend` | required | Where the shared state is stored |
+| `key` | `str` | `""` | Name of the state in the backend. Defaults to the registry name or `module.qualname` of the function |
+| `sync_interval` | `float` | `1.0` | Seconds between background passes (circuit breaker, retry budget). `0` disables the thread |
+| `fail_open` | `bool` | `True` | Rate limiting while the backend is unreachable: local limit (`True`) or reject (`False`) |
+
+| Method | Description |
+|--------|-------------|
+| `sync_now()` | Run one synchronisation pass immediately |
+
+### `StateBackend`
+
+Protocol for shared-state storage. `incr` must be atomic.
+
+| Method | Description |
+|--------|-------------|
+| `get(key)` | Value under `key`, or `None` |
+| `set(key, value, ttl=None)` | Store a string value, optionally expiring after `ttl` seconds |
+| `incr(key, amount, ttl=None)` | Atomically add `amount` and return the new total |
+| `delete(key)` | Remove `key` |
+
+### `InMemoryBackend`
+
+Thread-safe `StateBackend` in process memory. Also offers `keys()`.
+
 ### `RetryBudgetConfig`
 
 | Parameter | Type | Default | Description |
@@ -136,6 +201,7 @@ Shared retry budget instance. Created with `RetryBudget(RetryBudgetConfig(...))`
 |--------|-------------|
 | `acquire()` | Consume a retry token. Returns `True` if granted, `False` if exhausted |
 | `available` | Number of tokens currently available |
+| `refund()` | Give back one token that was acquired but not used |
 
 ## Context
 
@@ -209,8 +275,9 @@ Fail-fast policy: 5s timeout, 1 retry, no jitter.
 ### `llm_policy(**kwargs)`
 
 Optimized for LLM / HTTP API calls: 60s timeout, 4 attempts with 429-aware `Retry-After`-honoring
-backoff, client-side rate limiter (60 calls/60s), circuit breaker at 5 failures. See
-[HTTP & LLM Helpers](advanced/http.md).
+backoff, client-side rate limiter (60 calls/60s), circuit breaker at 5 failures. Optional
+`tokens_per_minute` (with `token_cost` / `token_usage`), `adaptive_rate_limit` and
+`rate_limit_max_wait`. See [HTTP & LLM Helpers](advanced/http.md).
 
 ## contrib.http
 
@@ -227,6 +294,20 @@ Returns a `delay_func` for `RetryConfig.delay_func`. Parses the `Retry-After` he
 (delta-seconds and HTTP-date forms) from the triggering response or from an exception carrying
 a `.response` attribute; returns `None` (exponential backoff fallback) when absent or
 unparseable; result is clamped to `[0, max_wait]`.
+
+### `rate_limit_feedback(*, calls_limit="calls", tokens_limit="tokens", max_pause=60.0)`
+
+Returns a `feedback` function for `RateLimiterConfig.feedback`. Parses `Retry-After`,
+`x-ratelimit-*`, `anthropic-ratelimit-*` and `RateLimit-*` headers from a response or from an
+exception carrying a `.response`, and returns a `RateLimitFeedback` (or `None`). Pauses are
+capped at `max_pause` seconds.
+
+## contrib.redis
+
+### `RedisBackend(client, prefix="pyresilience:")`
+
+`StateBackend` on top of a synchronous redis-py compatible client that you supply. pyresilience
+does not import a Redis library.
 
 ## Observability
 
@@ -261,7 +342,7 @@ In-memory metrics collector.
 
 ### `EventType`
 
-`RETRY`, `RETRY_EXHAUSTED`, `TIMEOUT`, `CIRCUIT_OPEN`, `CIRCUIT_HALF_OPEN`, `CIRCUIT_CLOSED`, `FALLBACK_USED`, `BULKHEAD_REJECTED`, `RATE_LIMITED`, `CACHE_HIT`, `CACHE_MISS`, `SUCCESS`, `FAILURE`, `SLOW_CALL`
+`RETRY`, `RETRY_EXHAUSTED`, `TIMEOUT`, `CIRCUIT_OPEN`, `CIRCUIT_HALF_OPEN`, `CIRCUIT_CLOSED`, `FALLBACK_USED`, `COOLDOWN`, `BULKHEAD_REJECTED`, `RATE_LIMITED`, `CACHE_HIT`, `CACHE_MISS`, `SUCCESS`, `FAILURE`, `SLOW_CALL`
 
 ## Exceptions
 

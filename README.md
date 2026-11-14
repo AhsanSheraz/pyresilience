@@ -22,7 +22,7 @@ Inspired by Java's [Resilience4j](https://resilience4j.readme.io/). Stop jugglin
 pip install pyresilience
 ```
 
-Also works with `uv`, `poetry`, and `pdm`.
+Also works with `uv`, `poetry`, and `pdm`. Python 3.9+; CI tests 3.10 through 3.15 on Linux, macOS and Windows.
 
 ## Quick Start
 
@@ -46,6 +46,8 @@ Retries with exponential backoff. Times out at 10s. Opens the circuit after 5 fa
 - **One library instead of many** — No need to wire together `tenacity` + `pybreaker` + custom timeout/fallback/rate limiting code. One config, one decorator.
 - **Patterns that work together** — Circuit breaker state is shared across retries. Rate limiting respects bulkhead limits. Cache short-circuits the entire pipeline. Everything is coordinated.
 - **Zero dependencies** — Pure Python stdlib. Nothing to conflict with your stack.
+- **Built for LLM and rate-limited APIs** — Requests-per-minute and tokens-per-minute limits together, token usage settled after the call, limits that follow `Retry-After` and `x-ratelimit-*` headers, and fallback to another provider with a cooldown for the one that is down.
+- **Scales past one process** — Share one circuit breaker, rate limit and retry budget across workers and replicas through a pluggable backend (in-memory or your Redis client).
 - **Sync and async** — Same API for both. Auto-detects your function type.
 - **Production observability** — Built-in event listeners for logging, metrics, and alerting. OpenTelemetry and Prometheus listeners included. Know when circuits open, retries fire, or rate limits hit.
 - **Thread-safe and async-safe** — All stateful components use locks. Async-safe latency tracking via `contextvars`. Cache stampede prevention via per-key locking.
@@ -189,25 +191,89 @@ Prevent retry storms across your service with a shared token bucket:
 ```python
 from pyresilience import resilient, RetryConfig, RetryBudgetConfig, RetryBudget
 
-budget = RetryBudget(RetryBudgetConfig(max_retries=100, refill_rate=10))
-
-@resilient(retry=RetryConfig(max_attempts=3, retry_budget=budget))
+@resilient(
+    retry=RetryConfig(max_attempts=3),
+    retry_budget=RetryBudgetConfig(max_retries=100, refill_rate=10),
+)
 def call_api(): ...
 ```
 
-### Per-Attempt Timeout
+### Timeouts That Compose
 
-Apply timeout per attempt instead of a total deadline:
+A limit per attempt, an overall deadline, or both. The call stops retrying as soon as the time left cannot cover the next wait:
 
 ```python
-from pyresilience import resilient, TimeoutConfig
+from pyresilience import resilient, RetryConfig, TimeoutConfig
 
-@resilient(timeout=TimeoutConfig(seconds=5, per_attempt=True))   # 5s per attempt
+@resilient(
+    retry=RetryConfig(max_attempts=4),
+    timeout=TimeoutConfig(seconds=10, total_seconds=30),   # 10s per attempt, 30s overall
+)
 def call_api(): ...
 
-@resilient(timeout=TimeoutConfig(seconds=30, per_attempt=False))  # 30s total deadline
-def call_db(): ...
+@resilient(timeout=TimeoutConfig(seconds=30, stream_idle_seconds=15))
+async def stream_completion(prompt: str):
+    return client.stream(prompt)   # raises if no chunk arrives for 15s
 ```
+
+### LLM-Grade Rate Limiting
+
+Several limits at once, weighted by what a call really costs, and corrected by what the server reports:
+
+```python
+from pyresilience import resilient, RateLimit, RateLimiterConfig
+from pyresilience.contrib.http import rate_limit_feedback
+
+@resilient(rate_limiter=RateLimiterConfig(
+    max_calls=60, period=60.0,                       # requests per minute
+    max_wait=10.0,
+    limits=[RateLimit(
+        max_units=90_000, period=60.0, name="tokens",  # tokens per minute
+        cost=lambda prompt: len(prompt) // 4 + 256,     # estimate, reserved up front
+        actual_cost=lambda r: r.usage.total_tokens,     # settled after the call
+    )],
+    feedback=rate_limit_feedback(),                   # follow Retry-After and x-ratelimit-* headers
+))
+def complete(prompt: str): ...
+```
+
+Or in one line: `@resilient(**llm_policy(tokens_per_minute=90_000, token_cost=..., adaptive_rate_limit=True))`.
+
+### Fallback to Another Provider
+
+Alternatives receive the original arguments. A target that keeps failing is skipped during its cooldown:
+
+```python
+from pyresilience import resilient, FallbackConfig
+
+@resilient(fallback=FallbackConfig(
+    alternatives=[ask_backup_model, ask_small_model],
+    handler="No model available right now.",
+    cooldown=30.0,              # skip a failing provider for 30s
+    cooldown_threshold=3,       # after 3 failures in a row
+))
+def ask(prompt: str) -> str:
+    return primary_client.complete(prompt)
+```
+
+### Shared State Across Processes
+
+With five replicas, a limit of 100 calls per minute is really 500, and a breaker with `failure_threshold=5` absorbs 25 failures. Share the state instead:
+
+```python
+import redis
+from pyresilience import resilient, CircuitBreakerConfig, RateLimiterConfig, SharedStateConfig
+from pyresilience.contrib.redis import RedisBackend
+
+@resilient(
+    circuit_breaker=CircuitBreakerConfig(failure_threshold=5),
+    rate_limiter=RateLimiterConfig(max_calls=100, period=60.0),
+    shared_state=SharedStateConfig(backend=RedisBackend(redis.Redis()), key="payment-api"),
+)
+def charge(amount: float) -> dict: ...
+```
+
+Rate limits hold across processes, because every call is counted in the backend; circuit breaker and retry budget are synchronised in the background, with no backend I/O on the call path. pyresilience still has no dependencies: you pass in the Redis client you already use.
 
 ### Health Check
 
@@ -220,7 +286,7 @@ registry = ResilienceRegistry()
 # ... register and use services ...
 
 status = health_check(registry)
-# {"payment-api": "CLOSED", "inventory-api": "OPEN"}
+# {"payment-api": {"circuit_breaker": {"state": "closed", "failure_count": 0}}}
 ```
 
 ### Graceful Shutdown
@@ -289,6 +355,30 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 
 **pyresilience uses 43% less memory.**
 
+### New in 0.5.0: Feature Overhead
+
+Cost of one successful decorated call with the 0.5.0 features, from [`benchmarks/bench_new_features.py`](benchmarks/bench_new_features.py). Measured on Windows 11 (x86-64), minimum of 7 runs; a different machine than the tables above, so compare within this table only.
+
+| Configuration | Python 3.14 | Python 3.15 |
+|---------------|------------:|------------:|
+| bare function (baseline) | 0.03μs | 0.02μs |
+| Rate limiter: plain (one token per call) | 1.67μs | 1.44μs |
+| Rate limiter: weighted cost | 2.69μs | 2.27μs |
+| Rate limiter: three limits at once | 3.25μs | 2.65μs |
+| Rate limiter: token reconcile + server feedback | 5.49μs | 4.63μs |
+| Rate limiter: shared through a backend (in-memory) | 4.22μs | 4.02μs |
+| Fallback: plain handler | 1.28μs | 1.19μs |
+| Fallback: alternatives + cooldown (primary healthy) | 1.76μs | 1.56μs |
+| Fallback: primary cooling down, alternative used | 1.77μs | 1.55μs |
+| Shared circuit breaker + retry budget | 2.06μs | 1.76μs |
+| Registry: state shared by sync and async (sync call) | 2.66μs | 2.22μs |
+| Registry: state shared by sync and async (async call) | 3.83μs | 2.87μs |
+| Timeout: per attempt (sync, worker thread) | 23.83μs | 33.01μs |
+| Timeout: per attempt + overall deadline (sync) | 23.75μs | 33.11μs |
+| Stream idle timeout (async, per item) | 3.07μs | 2.58μs |
+
+Existing hot paths: two runs of `benchmarks/bench_compare.py` (working tree against 0.4.1, 9 alternating rounds each) put every `bench_overhead.py` configuration within about 10% in either direction, with the two runs disagreeing in sign on most rows. That is the noise floor of the machine used; no difference beyond it was measured.
+
 ## Comparison
 
 | | pyresilience | tenacity | pybreaker | backoff | stamina |
@@ -302,6 +392,10 @@ Benchmarked against tenacity, backoff, stamina, and pybreaker on macOS (Apple Si
 | Cache | Yes | - | - | - | - |
 | Retry Budget | Yes | - | - | - | - |
 | 429 + Retry-After handling | Yes | - | - | - | - |
+| Per-attempt timeout + overall deadline | Yes | - | - | - | - |
+| Token-aware, multi-limit rate limiting | Yes | - | - | - | - |
+| Fallback to alternatives with cooldown | Yes | - | - | - | - |
+| Shared state across processes | Yes | - | Breaker only | - | - |
 | Context Propagation | Yes | - | - | - | - |
 | Health Check | Yes | - | - | - | - |
 | Prometheus | Yes | - | - | - | - |

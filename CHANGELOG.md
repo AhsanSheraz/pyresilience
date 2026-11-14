@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-14
+
+### Added
+- Composable timeouts: `TimeoutConfig.total_seconds` is an overall deadline for all attempts and retry waits, enforced together with the per-attempt `seconds`. Each attempt gets `min(seconds, time left)`.
+- Stream idle timeout: `TimeoutConfig.stream_idle_seconds` bounds the wait for the first item and between items when a function returns an iterator or async iterator.
+- Several rate limits at once: `RateLimiterConfig.limits` takes `RateLimit` entries (for example requests per minute and tokens per minute, or per second and per day). A call proceeds only when every limit has capacity, and nothing is consumed when one rejects it.
+- Weighted rate limiting: `RateLimiterConfig.cost` and `RateLimit.cost` compute a call's cost from its arguments.
+- Token reconciliation: `actual_cost` reads the real usage from the result and gives back or charges the difference to the reserved estimate.
+- Server-driven rate limiting: `RateLimiterConfig.feedback` returns a `RateLimitFeedback`; `retry_after` pauses the limiter and `remaining` lowers its levels. `pyresilience.contrib.http.rate_limit_feedback()` parses `Retry-After`, `x-ratelimit-*`, `anthropic-ratelimit-*` and `RateLimit-*` headers.
+- `RateLimiterConfig.charge_retries` debits every retry attempt against the limits.
+- `llm_policy()` options `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit` and `rate_limit_max_wait`. Defaults are unchanged.
+- Fallback alternatives: `FallbackConfig.alternatives` are tried in order with the original arguments before the handler, for example the same request against another provider.
+- Fallback cooldown: `FallbackConfig.cooldown` and `cooldown_threshold` skip a target (the decorated function or an alternative) that keeps failing. New `EventType.COOLDOWN`.
+- Shared state across processes: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state. `InMemoryBackend` ships in the core; `pyresilience.contrib.redis.RedisBackend` wraps a Redis client you supply, so the package still has no dependencies (#29).
+- `shared_state` parameter on `@resilient` and `ResilienceConfig`.
+- `RetryBudget.refund()` gives back a retry token that was acquired but not used.
+- Python 3.15 support: classifier, CI matrix and tox environment.
+- Benchmarks: `benchmarks/bench_new_features.py` for the new paths, `benchmarks/bench_compare.py` to compare the working tree against a git ref, and `benchmarks/README.md`.
+- Documentation pages for Fallback and Shared State.
+
+### Changed
+- Registry: sync and async functions registered under one name now share the circuit breaker, rate limits, retry budget and fallback cooldown state. Before, each call style had its own. Bulkhead slots and cached results stay separate per call style.
+- Total-deadline timeouts (`per_attempt=False`, and the new `total_seconds`) stop retrying as soon as the time left cannot cover the next retry wait, and raise `ResilienceTimeoutError` chained from the last error. Before, the call slept through the remaining retry waits first.
+- With `cost`, `limits`, `feedback` or `charge_retries` configured, the `RATE_LIMITED` event detail and the `RateLimitExceededError` message name the limit that rejected the call.
+
+### Fixed
+- `ResilienceRegistry.register()` on an existing name now drops the cached executors of that name, so the new configuration takes effect for functions decorated afterwards.
+- README examples for the retry budget and the health check output.
+
 ## [0.4.1] - 2026-10-18
 
 ### Fixed

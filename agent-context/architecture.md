@@ -10,7 +10,7 @@
 
 - **Decorator plus executor**: `_decorator.resilient` picks `_AsyncExecutor` when `inspect.iscoroutinefunction(fn)` is true, otherwise `_SyncExecutor`. Both live in `src/pyresilience/_executor.py` and mirror each other.
 - **Config dataclasses as the contract**: every pattern is configured by a `*Config` dataclass in `src/pyresilience/_types.py`; `ResilienceConfig` composes them.
-- **Sync/async sibling classes**: bulkhead, rate limiter and cache have `Foo` and `AsyncFoo` in the same module. The circuit breaker and retry budget are single thread-locked classes used by both executors.
+- **Sync/async sibling classes**: bulkhead, rate limiter and cache have `Foo` and `AsyncFoo` in the same module. The circuit breaker and retry budget are single thread-locked classes used by both executors. The circuit breaker, rate limiter state, retry budget and fallback router are built once into `_Parts` (`_parts.py`) and shared by the sync and async executors of a registry name; with `SharedStateConfig` they exchange state through a `StateBackend`.
 - **Private modules, public facade**: implementation lives in `_underscore` modules; `__init__.py` `__all__` is the contract. `presets.py` and `logging.py` are thin public re-exports.
 - **Hot-path performance discipline**: `_executor.py` pre-caches config as instance attributes (`__slots__`), inlines `isinstance`, guards `_emit` behind a `has_listeners` bool and has a no-retry/no-timeout fast path.
 
@@ -30,8 +30,9 @@ Layers (conceptual):
 | Layer | Modules |
 |---|---|
 | Public API | `__init__.py`, `_decorator.py`, `presets.py`, `logging.py`, `_registry.py` |
-| Orchestration | `_executor.py` |
-| Patterns | `_retry_budget.py`, `_circuit_breaker.py`, `_bulkhead.py`, `_rate_limiter.py`, `_cache.py` |
+| Orchestration | `_executor.py`, `_parts.py`, `_events.py`, `_fallback.py`, `_stream.py` |
+| Patterns | `_retry_budget.py`, `_circuit_breaker.py`, `_bulkhead.py`, `_rate_limiter.py`, `_limiter_core.py`, `_weighted_limiter.py`, `_cache.py` |
+| State sharing | `_backend.py`, `_shared.py`, `_shared_breaker.py` |
 | Contracts | `_types.py`, `_exceptions.py` |
 | Observability | `_logging.py`, `_health.py` |
 | Compatibility | `_compat.py` |
@@ -51,7 +52,7 @@ None at runtime. Optional packages are detected or imported lazily; see `integra
 
 | Layer | Technology |
 |---|---|
-| Language | Python `>=3.9` (`pyproject.toml`); CI matrix runs 3.10 to 3.14, tox also lists 3.9 |
+| Language | Python `>=3.9` (`pyproject.toml`); CI matrix runs 3.10 to 3.15, tox lists py39 to py315 |
 | Runtime deps | none (`pyproject.toml` has no `dependencies`) |
 | Optional extras | `fast` (uvloop on non-Windows, orjson), `dev` (pytest, pytest-cov, pytest-asyncio, mypy, ruff) |
 | Build backend | hatchling (wheel packages `src/pyresilience`) |
@@ -62,9 +63,26 @@ None at runtime. Optional packages are detected or imported lazily; see `integra
 ## Key Directories
 
 - `src/pyresilience/` - library package (see layer table above); `py.typed` marker is present.
-- `src/pyresilience/contrib/` - `fastapi.py`, `django.py`, `flask.py`, `http.py`, `otel.py`, `prometheus.py`.
+- `src/pyresilience/contrib/` - `fastapi.py`, `django.py`, `flask.py`, `http.py`, `otel.py`, `prometheus.py`, `redis.py`.
 - `tests/` - pytest suite, one `test_*.py` per feature; no `conftest.py`.
-- `benchmarks/` - `bench_overhead.py`, `full_benchmark.py`, `stress_test.py`.
+
+### Internal modules added in 0.5.0 (`src/pyresilience/`)
+
+| Module | Owns |
+|---|---|
+| `_events.py` | `_emit` (moved out of `_executor.py`); catches listener exceptions |
+| `_stream.py` | `_wrap_stream`, `_IdleTimeoutIterator`, `_IdleTimeoutAsyncIterator` for `TimeoutConfig.stream_idle_seconds` |
+| `_limiter_core.py` | `_Bucket`, `_LimiterCore`: token buckets, all-or-nothing reserve, reconcile, feedback, pause |
+| `_weighted_limiter.py` | `_WeightedRateLimiter`, `_AsyncWeightedRateLimiter`, `_needs_weighted_limiter` |
+| `_fallback.py` | `_apply_fallback`, `_apply_fallback_async`, `_FallbackRouter` (alternatives, cooldown) |
+| `_backend.py` | `StateBackend` protocol, `InMemoryBackend` (both public) |
+| `_shared.py` | `_Syncer`, `_SharedWindows`, `_SyncedRetryBudget` |
+| `_shared_breaker.py` | `_SyncedCircuitBreaker` |
+| `_parts.py` | `_Parts`, `_build_parts`: stateful parts built once and shared by sync and async executors |
+| `contrib/redis.py` | `RedisBackend` |
+
+Details: `domains/rate-limiting.md`, `domains/fallback.md`, `domains/shared-state.md`, `domains/executor-pipeline.md`.
+- `benchmarks/` - `bench_overhead.py`, `bench_new_features.py`, `bench_compare.py`, `full_benchmark.py`, `stress_test.py`, `README.md`.
 - `examples/` - runnable examples.
 - `docs/` - mkdocs sources (`core/`, `advanced/`, `getting-started/`, `api.md`).
 - `.github/workflows/` - `ci.yml`, `docs.yml`, `auto-merge-dependabot.yml`.

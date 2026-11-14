@@ -44,3 +44,13 @@ pytest -v tests/test_retry_budget.py::TestRetryBudget::test_acquire_until_deplet
 - Do NOT leave `pdb` or `breakpoint()` in tests (pre-commit `debug-statements`).
 
 <!-- /human-owned -->
+
+<!-- agent-updatable -->
+
+## Test Inventory (0.5.0)
+
+- 797 tests as of 0.5.0, passing on Python 3.9, 3.10, 3.14 and 3.15.
+- Files added in 0.5.0: `test_timeout_deadline.py`, `test_stream_timeout.py`, `test_rate_limiter_weighted.py`, `test_rate_limiter_feedback.py`, `test_rate_limiter_weighted_decorator.py`, `test_contrib_http_feedback.py`, `test_fallback_cooldown.py`, `test_fallback_cooldown_async.py`, `test_backend.py`, `test_registry_shared.py`, `test_shared_breaker.py`, `test_shared_limits.py`, `test_shared_sync.py`.
+- Shared-state tests use `InMemoryBackend`; none needs a running Redis.
+
+<!-- /agent-updatable -->

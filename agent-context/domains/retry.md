@@ -46,7 +46,7 @@ Not applicable.
 ## External Workflow Wiring
 
 - `RetryBudget` is a lock-protected token bucket (`max_retries` capacity, `refill_rate` tokens per second, starts full). `acquire()` consumes one token; `available` and `reset()` are public.
-- A `RetryBudget` is created per executor from `ResilienceConfig.retry_budget`. To share it across functions use one `ResilienceRegistry` name (see `test_shared_budget_across_functions`). Only retries are charged, never the first call.
+- A `RetryBudget` is created per executor from `ResilienceConfig.retry_budget`, or once per `ResilienceRegistry` name, where the sync and async executors share it (see `test_shared_budget_across_functions`). With `SharedStateConfig` it is a `_SyncedRetryBudget` exchanged with the backend in the background. Only retries are charged, never the first call.
 
 <!-- agent-updatable -->
 
@@ -55,9 +55,10 @@ Not applicable.
 | File | Responsibility |
 |---|---|
 | `src/pyresilience/_types.py` | `RetryConfig`, `RetryBudgetConfig` and validation |
-| `src/pyresilience/_executor.py` | `_compute_delay`, `_resolve_delay`, `_execute_with_retry` (sync and async) |
+| `src/pyresilience/_executor.py` | `_compute_delay`, `_resolve_delay`, `_execute_with_retry` (sync and async), `_on_total_timeout` (stops retrying when the overall deadline is spent: `TimeoutConfig.total_seconds` or `per_attempt=False`; see `executor-pipeline.md`) |
 | `src/pyresilience/_retry_budget.py` | `RetryBudget` |
-| `src/pyresilience/contrib/http.py` | `retry_on_status`, `retry_after_delay` |
+| `src/pyresilience/_shared.py` | `_SyncedRetryBudget` (cross-process budget; `shared-state.md`) |
+| `src/pyresilience/contrib/http.py` | `retry_on_status`, `retry_after_delay` (`rate_limit_feedback` is covered in `rate-limiting.md`) |
 | `src/pyresilience/_presets.py` | presets that configure retry (`http_policy`, `db_policy`, `queue_policy`, `llm_policy`, `strict_policy`) |
 | `tests/test_retry.py`, `tests/test_retry_on_result.py`, `tests/test_retry_budget.py` | behaviour tests |
 

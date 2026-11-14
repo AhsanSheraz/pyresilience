@@ -4,6 +4,7 @@ One decorator to combine retry, timeout, circuit breaker, fallback, and bulkhead
 Defines the full safety policy for a dependency, not just retries.
 """
 
+from pyresilience._backend import InMemoryBackend, StateBackend
 from pyresilience._cache import AsyncResultCache, ResultCache
 from pyresilience._circuit_breaker import CircuitBreaker
 from pyresilience._compat import has_orjson, has_uvloop, install_uvloop
@@ -28,16 +29,19 @@ from pyresilience._types import (
     CircuitState,
     EventType,
     FallbackConfig,
+    RateLimit,
     RateLimiterConfig,
+    RateLimitFeedback,
     ResilienceConfig,
     ResilienceEvent,
     ResilienceListener,
     RetryBudgetConfig,
     RetryConfig,
+    SharedStateConfig,
     TimeoutConfig,
 )
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 __all__ = [
     "AsyncRateLimiter",
@@ -51,9 +55,12 @@ __all__ = [
     "CircuitState",
     "EventType",
     "FallbackConfig",
+    "InMemoryBackend",
     "JsonEventLogger",
     "MetricsCollector",
+    "RateLimit",
     "RateLimitExceededError",
+    "RateLimitFeedback",
     "RateLimiter",
     "RateLimiterConfig",
     "ResilienceConfig",
@@ -66,6 +73,8 @@ __all__ = [
     "RetryBudget",
     "RetryBudgetConfig",
     "RetryConfig",
+    "SharedStateConfig",
+    "StateBackend",
     "TimeoutConfig",
     "db_policy",
     "enable_in_flight_tracking",

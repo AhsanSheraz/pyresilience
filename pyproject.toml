@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyresilience"
-version = "0.4.1"
+version = "0.5.0"
 description = "Unified resilience patterns for Python — retry, circuit breaker, timeout, fallback, bulkhead, rate limiter, and cache in one decorator."
 readme = "README.md"
 license = "MIT"
@@ -16,6 +16,7 @@ keywords = [
     "python", "resilience", "retry", "circuit-breaker", "timeout",
     "fallback", "bulkhead", "fault-tolerance", "decorator", "async",
     "reliability", "microservices", "distributed-systems",
+    "rate-limiter", "llm",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -30,6 +31,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Networking",
     "Typing :: Typed",

@@ -53,9 +53,11 @@ Registry-shared breakers: `health_check(registry)` reads `executor._circuit_brea
 |---|---|
 | `src/pyresilience/_circuit_breaker.py` | `CircuitBreaker` |
 | `src/pyresilience/_types.py` | `CircuitBreakerConfig`, `CircuitState` |
+| `src/pyresilience/_shared_breaker.py` | `_SyncedCircuitBreaker(CircuitBreaker)`: shares the open state (and the consecutive failure streak) across processes through `sync()`; see `shared-state.md` |
+| `src/pyresilience/_parts.py` | builds the plain or synced breaker; one breaker per registry name is shared by the sync and async executors |
 | `src/pyresilience/_executor.py` | calls `allow_request`, `record_success_atomic`, `record_failure`; emits circuit events |
 | `src/pyresilience/_health.py` | `health_check` |
-| `tests/test_circuit_breaker.py`, `tests/test_sliding_window.py` | behaviour tests |
+| `tests/test_circuit_breaker.py`, `tests/test_sliding_window.py`, `tests/test_shared_breaker.py` | behaviour tests |
 
 <!-- /agent-updatable -->
 
