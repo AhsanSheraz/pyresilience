@@ -11,7 +11,7 @@ import pytest
 
 from pyresilience import ResilienceTimeoutError, TimeoutConfig, resilient
 
-STREAM = TimeoutConfig(seconds=5.0, stream_idle_seconds=1.0)
+STREAM = TimeoutConfig(seconds=5.0, stream_idle_seconds=5.0)
 
 
 class ManagedStream:
@@ -73,7 +73,7 @@ def _wait_until(condition: Any, timeout: float = 3.0) -> bool:
 
 class TestSyncStreamConcurrency:
     def test_many_concurrent_streams_all_finish(self) -> None:
-        @resilient(timeout=TimeoutConfig(seconds=5.0, pool_size=2, stream_idle_seconds=1.0))
+        @resilient(timeout=TimeoutConfig(seconds=5.0, pool_size=2, stream_idle_seconds=5.0))
         def stream() -> Iterator[int]:
             def chunks() -> Iterator[int]:
                 for index in range(3):
@@ -193,7 +193,7 @@ class TestSyncStreamContextManager:
             def __enter__(self) -> Iterator[int]:
                 def chunks() -> Iterator[int]:
                     yield 1
-                    time.sleep(1.0)
+                    time.sleep(3.0)
                     yield 2
 
                 return chunks()
@@ -201,7 +201,7 @@ class TestSyncStreamContextManager:
             def __exit__(self, *exc_info: Any) -> None:
                 return None
 
-        @resilient(timeout=TimeoutConfig(seconds=5.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=5.0, stream_idle_seconds=0.5))
         def stream() -> Opener:
             return Opener()
 

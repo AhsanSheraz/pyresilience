@@ -217,11 +217,11 @@ class TestAlternativesSync:
     def test_streamed_alternative_result_gets_the_idle_timeout(self) -> None:
         def backup() -> Iterator[int]:
             yield 1
-            time.sleep(1.0)
+            time.sleep(3.0)
             yield 2
 
         @resilient(
-            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1),
+            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5),
             fallback=FallbackConfig(alternatives=[backup]),
         )
         def primary() -> Iterator[int]:

@@ -142,13 +142,13 @@ class TestWeightedRateLimiterSync:
 
     def test_rejects_at_once_when_wait_cannot_succeed(self) -> None:
         limiter = _WeightedRateLimiter(
-            RateLimiterConfig(max_calls=1, period=LONG, max_wait=0.5, charge_retries=True)
+            RateLimiterConfig(max_calls=1, period=LONG, max_wait=3.0, charge_retries=True)
         )
         assert limiter.acquire() is True
         start = time.monotonic()
         assert limiter.acquire() is False
-        # Capacity returns in an hour; waiting 0.5s is pointless, so there is no wait
-        assert time.monotonic() - start < 0.3
+        # Capacity returns in an hour; waiting 3s is pointless, so there is no wait
+        assert time.monotonic() - start < 1.5
 
     def test_reset_refills_and_unpauses(self) -> None:
         limiter = _WeightedRateLimiter(
@@ -217,12 +217,12 @@ class TestWeightedRateLimiterAsync:
 
     async def test_rejects_at_once_when_wait_cannot_succeed(self) -> None:
         limiter = _AsyncWeightedRateLimiter(
-            RateLimiterConfig(max_calls=1, period=LONG, max_wait=0.5, charge_retries=True)
+            RateLimiterConfig(max_calls=1, period=LONG, max_wait=3.0, charge_retries=True)
         )
         assert await limiter.acquire() is True
         start = time.monotonic()
         assert await limiter.acquire() is False
-        assert time.monotonic() - start < 0.3
+        assert time.monotonic() - start < 1.5
 
     async def test_reconcile_and_feedback(self) -> None:
         config = RateLimiterConfig(

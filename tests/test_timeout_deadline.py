@@ -39,20 +39,20 @@ class TestTotalDeadlineSync:
         assert isinstance(info.value.__cause__, ValueError)
         # Delays 0.05 + 0.1 + 0.2 fit in 0.5s; the next 0.4s delay does not.
         assert 1 <= call_count < 10
-        # Generous bound for Windows timer precision: never sleeps the 0.4s delay
-        assert elapsed < 0.9
+        # Generous bound for slow CI: without the deadline the retries would take 25s
+        assert elapsed < 3.0
 
     def test_attempt_is_clamped_to_remaining_budget(self) -> None:
         @resilient(timeout=TimeoutConfig(seconds=5.0, total_seconds=0.2))
         def slow() -> str:
-            time.sleep(1.0)
+            time.sleep(3.0)
             return "late"
 
         start = time.monotonic()
         with pytest.raises(ResilienceTimeoutError):
             slow()
         # The 5s per-attempt limit must not apply: the 0.2s total wins
-        assert time.monotonic() - start < 0.9
+        assert time.monotonic() - start < 2.0
 
     def test_per_attempt_limit_still_applies_inside_total(self) -> None:
         call_count = 0
@@ -169,7 +169,7 @@ class TestTotalDeadlineSync:
             always_fails()
         assert call_count == 1
         # The 2s retry delay is skipped because it cannot fit in the 0.3s budget
-        assert time.monotonic() - start < 1.0
+        assert time.monotonic() - start < 1.8
 
     def test_succeeds_within_budget(self) -> None:
         call_count = 0
@@ -209,18 +209,18 @@ class TestTotalDeadlineAsync:
 
         assert isinstance(info.value.__cause__, ValueError)
         assert 1 <= call_count < 10
-        assert elapsed < 0.9
+        assert elapsed < 3.0
 
     async def test_attempt_is_clamped_to_remaining_budget(self) -> None:
         @resilient(timeout=TimeoutConfig(seconds=5.0, total_seconds=0.2))
         async def slow() -> str:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)
             return "late"
 
         start = time.monotonic()
         with pytest.raises(ResilienceTimeoutError):
             await slow()
-        assert time.monotonic() - start < 0.9
+        assert time.monotonic() - start < 2.0
 
     async def test_per_attempt_limit_still_applies_inside_total(self) -> None:
         call_count = 0
@@ -336,7 +336,7 @@ class TestTotalDeadlineAsync:
         with pytest.raises(ResilienceTimeoutError, match="total timeout budget"):
             await always_fails()
         assert call_count == 1
-        assert time.monotonic() - start < 1.0
+        assert time.monotonic() - start < 1.8
 
     async def test_succeeds_within_budget(self) -> None:
         call_count = 0

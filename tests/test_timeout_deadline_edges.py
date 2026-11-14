@@ -145,12 +145,13 @@ class TestDeadlineAndBulkheadWait:
 
     def test_bulkhead_wait_past_the_deadline_stops_the_call(self) -> None:
         release_holder = threading.Event()
-        first_attempt_done = threading.Event()
+        first_attempt_started = threading.Event()
+        holder_started = threading.Event()
         attempts = 0
 
         @resilient(
             retry=RetryConfig(max_attempts=3, delay=0.1, jitter=False),
-            timeout=TimeoutConfig(seconds=5.0, total_seconds=0.4),
+            timeout=TimeoutConfig(seconds=5.0, total_seconds=1.0),
             bulkhead=BulkheadConfig(max_concurrent=1, max_wait=5.0),
         )
         def work(hold: bool) -> str:
@@ -159,12 +160,18 @@ class TestDeadlineAndBulkheadWait:
                 release_holder.wait(timeout=5.0)
                 return "held"
             attempts += 1
-            first_attempt_done.set()
+            first_attempt_started.set()
+            # Fail only once the other call is queued for the slot, so the order
+            # does not depend on how fast a thread starts
+            holder_started.wait(timeout=5.0)
+            time.sleep(0.2)
             raise ValueError("boom")
 
         outcomes: dict[str, BaseException] = {}
 
         def call(name: str, hold: bool) -> None:
+            if hold:
+                holder_started.set()
             try:
                 work(hold)
             except BaseException as exc:
@@ -172,9 +179,10 @@ class TestDeadlineAndBulkheadWait:
 
         caller = threading.Thread(target=call, args=("failing", False))
         caller.start()
-        assert first_attempt_done.wait(timeout=5.0)
-        # While the failing call sleeps before its retry, this call takes the only slot.
-        # It started later, so its own deadline (and the slot) comes after the other one.
+        assert first_attempt_started.wait(timeout=5.0)
+        # This call waits for the only slot and gets it when the failing call gives
+        # it back for its retry sleep. It started later, so its own deadline (and
+        # with it the slot) comes after the deadline of the failing call.
         holder = threading.Thread(target=call, args=("holder", True))
         holder.start()
         caller.join(timeout=10.0)

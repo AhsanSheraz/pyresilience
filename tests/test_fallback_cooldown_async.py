@@ -168,14 +168,14 @@ class TestAlternativesAsync:
     async def test_streamed_alternative_result_gets_the_idle_timeout(self) -> None:
         async def chunks() -> AsyncIterator[int]:
             yield 1
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)
             yield 2
 
         async def backup() -> AsyncIterator[int]:
             return chunks()
 
         @resilient(
-            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1),
+            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5),
             fallback=FallbackConfig(alternatives=[backup]),
         )
         async def primary() -> AsyncIterator[int]:

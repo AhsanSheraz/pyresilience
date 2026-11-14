@@ -19,7 +19,7 @@ from pyresilience import (
 
 class TestStreamIdleTimeoutSync:
     def test_fast_stream_passes_through(self) -> None:
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         def stream() -> Iterator[int]:
             return iter([1, 2, 3])
 
@@ -30,11 +30,11 @@ class TestStreamIdleTimeoutSync:
 
         def chunks() -> Iterator[int]:
             yield 1
-            time.sleep(1.0)
+            time.sleep(3.0)
             yield 2
 
         @resilient(
-            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1),
+            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5),
             listeners=[events.append],
         )
         def stream() -> Iterator[int]:
@@ -42,7 +42,7 @@ class TestStreamIdleTimeoutSync:
 
         it = stream()
         assert next(it) == 1
-        with pytest.raises(ResilienceTimeoutError, match=r"idle for more than 0.1s"):
+        with pytest.raises(ResilienceTimeoutError, match=r"idle for more than 0\.5s"):
             next(it)
         # A stream that timed out is finished
         with pytest.raises(StopIteration):
@@ -53,10 +53,10 @@ class TestStreamIdleTimeoutSync:
 
     def test_slow_first_item_times_out(self) -> None:
         def chunks() -> Iterator[int]:
-            time.sleep(1.0)
+            time.sleep(3.0)
             yield 1
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         def stream() -> Iterator[int]:
             return chunks()
 
@@ -64,7 +64,7 @@ class TestStreamIdleTimeoutSync:
             next(stream())
 
     def test_non_stream_result_is_returned_unchanged(self) -> None:
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         def not_a_stream() -> list[int]:
             return [1, 2, 3]
 
@@ -77,7 +77,7 @@ class TestStreamIdleTimeoutSync:
             yield 1
             raise ValueError("stream broke")
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         def stream() -> Iterator[int]:
             return chunks()
 
@@ -93,7 +93,7 @@ class TestStreamIdleTimeoutSync:
             yield 1
             raise TimeoutError("socket timed out")
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         def stream() -> Iterator[int]:
             return chunks()
 
@@ -114,7 +114,7 @@ class TestStreamIdleTimeoutSync:
             finally:
                 closed = True
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         def stream() -> Iterator[int]:
             return chunks()
 
@@ -125,10 +125,10 @@ class TestStreamIdleTimeoutSync:
         assert closed
 
     async def test_sync_function_returning_async_iterator_is_wrapped(self) -> None:
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         async def stream() -> AsyncIterator[int]:
             yield 1
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)
             yield 2
 
         # An async generator function is not a coroutine function: it runs on the sync path
@@ -144,7 +144,7 @@ class TestStreamIdleTimeoutAsync:
             for i in (1, 2, 3):
                 yield i
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         async def stream() -> AsyncIterator[int]:
             return chunks()
 
@@ -155,11 +155,11 @@ class TestStreamIdleTimeoutAsync:
 
         async def chunks() -> AsyncIterator[int]:
             yield 1
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)
             yield 2
 
         @resilient(
-            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1),
+            timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5),
             listeners=[events.append],
         )
         async def stream() -> AsyncIterator[int]:
@@ -167,7 +167,7 @@ class TestStreamIdleTimeoutAsync:
 
         it = await stream()
         assert await it.__anext__() == 1
-        with pytest.raises(ResilienceTimeoutError, match=r"idle for more than 0.1s"):
+        with pytest.raises(ResilienceTimeoutError, match=r"idle for more than 0\.5s"):
             await it.__anext__()
         with pytest.raises(StopAsyncIteration):
             await it.__anext__()
@@ -176,10 +176,10 @@ class TestStreamIdleTimeoutAsync:
 
     async def test_slow_first_item_times_out(self) -> None:
         async def chunks() -> AsyncIterator[int]:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(3.0)
             yield 1
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         async def stream() -> AsyncIterator[int]:
             return chunks()
 
@@ -188,7 +188,7 @@ class TestStreamIdleTimeoutAsync:
             await it.__anext__()
 
     async def test_non_stream_result_is_returned_unchanged(self) -> None:
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         async def not_a_stream() -> dict[str, int]:
             return {"a": 1}
 
@@ -199,7 +199,7 @@ class TestStreamIdleTimeoutAsync:
             yield 1
             raise ValueError("stream broke")
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         async def stream() -> AsyncIterator[int]:
             return chunks()
 
@@ -222,7 +222,7 @@ class TestStreamIdleTimeoutAsync:
             finally:
                 closed = True
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=5.0))
         async def stream() -> AsyncIterator[int]:
             return chunks()
 
@@ -234,10 +234,10 @@ class TestStreamIdleTimeoutAsync:
     async def test_async_function_returning_sync_iterator_is_wrapped(self) -> None:
         def chunks() -> Iterator[int]:
             yield 1
-            time.sleep(1.0)
+            time.sleep(3.0)
             yield 2
 
-        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.1))
+        @resilient(timeout=TimeoutConfig(seconds=1.0, stream_idle_seconds=0.5))
         async def stream() -> Any:
             return chunks()
 
