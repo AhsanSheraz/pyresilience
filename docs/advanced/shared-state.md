@@ -8,6 +8,8 @@ By default every process keeps its own circuit breaker, rate limits and retry bu
 
 ```python
 import redis
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from pyresilience import (
     resilient, CircuitBreakerConfig, RateLimiterConfig, RetryBudgetConfig,
     RetryConfig, SharedStateConfig,
@@ -19,6 +21,7 @@ client = redis.Redis(
     port=6379,
     socket_connect_timeout=0.5,   # rate-limited calls wait for this client,
     socket_timeout=0.5,           # so keep its timeouts short
+    retry=Retry(NoBackoff(), 0),  # and switch off its own retries
 )
 shared = SharedStateConfig(backend=RedisBackend(client), key="payment-api")
 
@@ -115,7 +118,7 @@ The first failure of an outage is logged as a warning on the `pyresilience` logg
 
 After a failed backend call, rate limiting leaves the backend alone for `sync_interval` seconds (at least one second) and answers at once according to `fail_open`. When that pause is over, one call tries the backend again. So an outage costs one slow call per pause, not one per call.
 
-That first call still waits for the client to give up. Give the client you pass to `RedisBackend` short timeouts (`socket_connect_timeout`, `socket_timeout`) and few or no retries of its own: the client's defaults can add up to many seconds.
+That first call still waits for the client to give up. Give the client you pass to `RedisBackend` short timeouts (`socket_connect_timeout`, `socket_timeout`) and few or no retries of its own, as the Quick Start does: the client's defaults can add up to many seconds.
 
 ## With the Registry
 
@@ -182,5 +185,5 @@ class MyBackend:
 - **Clocks.** Shared timestamps use the wall clock. Clock skew between hosts shifts the shared recovery moment of a circuit breaker and the window boundaries of a rate limit by the skew. Keep hosts on NTP.
 - **Manual control.** `reset()`, `force_open()` and `force_close()` act on the local breaker. A reset also clears the shared record at the next pass; instances that already adopted the open state stay open until their recovery time.
 - **Background thread.** One daemon thread per `SharedStateConfig` runs the passes. It stops when nothing uses the config any more.
-- **Forked workers.** Threads do not survive `fork()`. A forked child (gunicorn with `--preload`, uWSGI, Celery's prefork pool, `multiprocessing` with the fork start method) starts its own background thread automatically, so functions decorated before the fork keep syncing.
+- **Forked workers.** Threads do not survive `fork()`. A forked child (gunicorn with `--preload`, Celery's prefork pool, `multiprocessing` with the fork start method) starts its own background thread automatically, so functions decorated before the fork keep syncing. uWSGI forks its workers without running Python's fork hooks, so there the thread is not restarted and the workers do not sync: start uWSGI with `py-call-osafterfork = true` or `lazy-apps = true`. Also set `enable-threads = true`, as uWSGI's documentation requires for threads the application starts.
 - **Latency.** Only rate limiting adds a backend round trip to the call. Circuit breaker and retry budget cost nothing on the call path.
