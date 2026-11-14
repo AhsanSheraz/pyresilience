@@ -196,12 +196,13 @@ class TestDeadlineAndBulkheadWait:
         assert attempts == 1
 
     async def test_bulkhead_wait_past_the_deadline_stops_the_call_async(self) -> None:
-        first_attempt_done = asyncio.Event()
+        first_attempt_started = asyncio.Event()
+        holder_started = asyncio.Event()
         attempts = 0
 
         @resilient(
             retry=RetryConfig(max_attempts=3, delay=0.1, jitter=False),
-            timeout=TimeoutConfig(seconds=5.0, total_seconds=0.4),
+            timeout=TimeoutConfig(seconds=5.0, total_seconds=1.0),
             bulkhead=BulkheadConfig(max_concurrent=1, max_wait=5.0),
         )
         async def work(hold: bool) -> str:
@@ -210,12 +211,18 @@ class TestDeadlineAndBulkheadWait:
                 await asyncio.sleep(5.0)
                 return "held"
             attempts += 1
-            first_attempt_done.set()
+            first_attempt_started.set()
+            # Fail only once the other call is queued for the slot, and clearly later.
+            # Its deadline then comes well after the deadline of this call, also where
+            # the clock ticks every 15.6 ms and both would otherwise start on one tick
+            await holder_started.wait()
+            await asyncio.sleep(0.2)
             raise ValueError("boom")
 
         failing = asyncio.ensure_future(work(False))
-        await first_attempt_done.wait()
+        await first_attempt_started.wait()
         holder = asyncio.ensure_future(work(True))
+        holder_started.set()
 
         with pytest.raises(ResilienceTimeoutError):
             await holder

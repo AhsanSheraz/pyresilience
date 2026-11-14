@@ -275,7 +275,10 @@ class TestCooldownSync:
 
         state = primary._executor._router.state()  # type: ignore[attr-defined]
         assert state["primary"]["failures"] == 1
-        assert 0 < state["primary"]["cooling_for"] <= 30.0
+        # About the whole cooldown. No exact upper bound: where the clock does not
+        # advance between two reads (Windows before Python 3.13), the difference can
+        # exceed 30.0 by a float rounding error
+        assert state["primary"]["cooling_for"] == pytest.approx(30.0, abs=1.0)
         assert state["backup"] == {"failures": 0, "cooling_for": 0.0}
 
     def test_threshold_counts_consecutive_failures(self) -> None:
