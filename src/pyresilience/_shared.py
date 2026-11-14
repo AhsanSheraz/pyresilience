@@ -35,9 +35,13 @@ _INF = float("inf")
 _syncer_lock = threading.Lock()
 # Seconds without backend calls after a failed one, unless the config asks for more
 _MIN_OUTAGE_PAUSE = 1.0
-# Longest time the other calls keep skipping the backend while one call is trying it
-# again. It only matters when that call does not report back.
-_MAX_RETRY_WAIT = 30.0
+# The backend is also left alone for this many times the time the failed call took,
+# so that a client that is slow to give up cannot keep a caller waiting most of the time
+_OUTAGE_BACKOFF = 10.0
+# Longest pause that results from that, and the longest time the other calls keep
+# skipping the backend while one call is trying it again (it only matters when that
+# call does not report back)
+_MAX_OUTAGE_PAUSE = 30.0
 
 
 class _Syncer:
@@ -143,11 +147,12 @@ class _SharedWindows:
     takes them back when any limit would be exceeded. Because the increment is
     atomic, the limit holds across every process that uses the same key.
 
-    After a failed backend call the backend is left alone for ``pause`` seconds:
-    calls are answered at once according to ``fail_open`` instead of each waiting
-    for the client's own timeout. When the pause is over, one call tries again.
-    Until that call reports back, the others keep being answered at once, so at
-    most one call at a time waits for a backend that is down.
+    After a failed backend call the backend is left alone for ``pause`` seconds,
+    or longer when the failed call was slow: calls are answered at once according
+    to ``fail_open`` instead of each waiting for the client's own timeout. When the
+    pause is over, one call tries again. Until that call reports back, the others
+    keep being answered at once, so at most one call at a time waits for a backend
+    that is down.
     """
 
     __slots__ = (
@@ -187,11 +192,14 @@ class _SharedWindows:
         window = int(now // self._periods[index])
         return f"{self._key}:rl:{self._names[index]}:{window}"
 
-    def _backend_failed(self) -> None:
+    def _backend_failed(self, took: float) -> None:
+        """Start the pause after a backend call that failed after *took* seconds."""
         log = _logger.debug if self._failing else _logger.warning
         log("Shared rate limit backend failed for %r", self._key, exc_info=True)
         self._failing = True
-        self._down_until = time.monotonic() + self._pause
+        # The longer the client took to give up, the longer the backend is left alone
+        pause = max(self._pause, min(_OUTAGE_BACKOFF * took, _MAX_OUTAGE_PAUSE))
+        self._down_until = time.monotonic() + pause
 
     def _backend_ok(self) -> None:
         if self._failing:
@@ -214,7 +222,7 @@ class _SharedWindows:
             return True
         # The pause is over: this call tries the backend. The others keep skipping it
         # until this call reports back, however long the client takes to give up.
-        self._down_until = now + max(self._pause, _MAX_RETRY_WAIT)
+        self._down_until = now + max(self._pause, _MAX_OUTAGE_PAUSE)
         return False
 
     def _unavailable(self, count: int) -> tuple[bool, float, str, list[Optional[str]]]:
@@ -254,7 +262,7 @@ class _SharedWindows:
                     wait = (int(now // period) + 1) * period - now
                     return False, wait, self._names[index], windows
         except Exception:
-            self._backend_failed()
+            self._backend_failed(time.time() - now)
             for taken_key, taken_cost, taken_period in taken:
                 try:
                     backend.incr(taken_key, -taken_cost, ttl=taken_period * 2)
@@ -286,7 +294,7 @@ class _SharedWindows:
                     windows[index] = key
                     sent = True
         except Exception:
-            self._backend_failed()
+            self._backend_failed(time.time() - now)
             return None
         if sent:
             self._backend_ok()
@@ -316,7 +324,7 @@ class _SharedWindows:
                     self._backend.incr(current, -delta, ttl=ttl)
                     sent = True
         except Exception:
-            self._backend_failed()
+            self._backend_failed(time.time() - now)
             return
         if sent:
             self._backend_ok()

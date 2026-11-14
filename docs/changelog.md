@@ -29,7 +29,7 @@
 - New `benchmarks/bench_new_features.py` and `benchmarks/bench_compare.py`; results in [Performance](advanced/performance.md)
 
 ### Tests
-- 859 tests (up from 464), 98% branch coverage
+- 863 tests (up from 464), 98% branch coverage
 - Passing on Python 3.15.1
 
 ---

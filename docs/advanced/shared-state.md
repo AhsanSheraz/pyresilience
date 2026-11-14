@@ -116,7 +116,7 @@ A backend failure never raises into your call.
 
 The first failure of an outage is logged as a warning on the `pyresilience` logger, the following ones at debug level.
 
-After a failed backend call, rate limiting leaves the backend alone for `sync_interval` seconds (at least one second) and answers at once according to `fail_open`. When that pause is over, one call tries the backend again. While it is trying, the other calls keep being answered at once, so one call at a time waits for a backend that is down, however long the client takes to give up. If that call has not come back after 30 seconds, another one tries.
+After a failed backend call, rate limiting leaves the backend alone for `sync_interval` seconds (at least one second) and answers at once according to `fail_open`. After a slow failure the pause is longer: ten times as long as the failed call took, up to 30 seconds, so that a client that is slow to give up cannot keep a caller waiting most of the time. When the pause is over, one call tries the backend again. While it is trying, the other calls keep being answered at once, so one call at a time waits for a backend that is down. If that call has not come back after 30 seconds, another one tries.
 
 That one call still waits for the client to give up, and so does every call that was already talking to the backend when it went down. Give the client you pass to `RedisBackend` short timeouts (`socket_connect_timeout`, `socket_timeout`) and few or no retries of its own, as the Quick Start does: the client's defaults can add up to many seconds.
 
