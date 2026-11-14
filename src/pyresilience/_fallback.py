@@ -206,7 +206,13 @@ class _FallbackRouter:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         listeners: list[ResilienceListener],
+        on_primary_skipped: Optional[Callable[[], None]] = None,
     ) -> Any:
+        """Run one call.
+
+        *on_primary_skipped* is called right before an alternative or the handler
+        answers a call for which the primary was not called at all.
+        """
         primary = self._primary
         error: BaseException
         skipped = self._skip_primary()
@@ -247,6 +253,8 @@ class _FallbackRouter:
                 )
             if target.failures:
                 self._record_success(target)
+            if skipped and on_primary_skipped is not None:
+                on_primary_skipped()
             if listeners:
                 _emit(
                     listeners,
@@ -258,6 +266,8 @@ class _FallbackRouter:
             return result
 
         if self._has_handler:
+            if skipped and on_primary_skipped is not None:
+                on_primary_skipped()
             if listeners:
                 _emit(listeners, EventType.FALLBACK_USED, func_name, error=error)
             return _apply_fallback(self._config, self._handler_error(error))
@@ -282,7 +292,9 @@ class _FallbackRouter:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         listeners: list[ResilienceListener],
+        on_primary_skipped: Optional[Callable[[], None]] = None,
     ) -> Any:
+        """Async twin of ``run_sync``."""
         primary = self._primary
         error: BaseException
         skipped = self._skip_primary()
@@ -316,6 +328,8 @@ class _FallbackRouter:
                 continue
             if target.failures:
                 self._record_success(target)
+            if skipped and on_primary_skipped is not None:
+                on_primary_skipped()
             if listeners:
                 _emit(
                     listeners,
@@ -327,6 +341,8 @@ class _FallbackRouter:
             return result
 
         if self._has_handler:
+            if skipped and on_primary_skipped is not None:
+                on_primary_skipped()
             if listeners:
                 _emit(listeners, EventType.FALLBACK_USED, func_name, error=error)
             return await _apply_fallback_async(self._config, self._handler_error(error))

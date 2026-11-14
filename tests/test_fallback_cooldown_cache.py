@@ -28,6 +28,20 @@ class Backup:
         return f"backup: {prompt}"
 
 
+class Flaky:
+    """An alternative that answers until the test switches it off."""
+
+    __name__ = "flaky"
+
+    def __init__(self) -> None:
+        self.down = False
+
+    def __call__(self, prompt: str) -> str:
+        if self.down:
+            raise ConnectionError("backup is down")
+        return f"backup: {prompt}"
+
+
 def _types(events: list[ResilienceEvent]) -> list[EventType]:
     return [event.event_type for event in events]
 
@@ -104,6 +118,47 @@ class TestCacheDuringCooldownSync:
         assert primary("good") == "primary: good"
         assert _types(events).count(EventType.CACHE_MISS) == 1
 
+    def test_one_miss_is_reported_when_the_primary_is_called_after_all(self) -> None:
+        backup = Flaky()
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            cache=CacheConfig(),
+            fallback=FallbackConfig(alternatives=[backup], **COOLDOWN),
+            listeners=[events.append],
+        )
+        def primary(prompt: str) -> str:
+            if prompt == "bad":
+                raise ConnectionError("primary is down")
+            return f"primary: {prompt}"
+
+        assert primary("bad") == "backup: bad"  # the cooldown starts here
+        backup.down = True
+        events.clear()
+
+        # The backup fails too, so the cooling primary is called after all
+        assert primary("new") == "primary: new"
+        assert _types(events).count(EventType.CACHE_MISS) == 1
+
+    def test_uncached_call_goes_to_the_handler(self) -> None:
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            cache=CacheConfig(),
+            fallback=FallbackConfig(handler=lambda exc: "handled", **COOLDOWN),
+            listeners=[events.append],
+        )
+        def primary(prompt: str) -> str:
+            if prompt == "bad":
+                raise ConnectionError("primary is down")
+            return f"primary: {prompt}"
+
+        assert primary("bad") == "handled"
+        events.clear()
+
+        assert primary("new") == "handled"
+        assert _types(events) == [EventType.CACHE_MISS, EventType.FALLBACK_USED]
+
 
 class TestCacheDuringCooldownAsync:
     async def test_cached_result_is_served_while_the_primary_cools_down(self) -> None:
@@ -176,3 +231,43 @@ class TestCacheDuringCooldownAsync:
 
         assert await primary("good") == "primary: good"
         assert _types(events).count(EventType.CACHE_MISS) == 1
+
+    async def test_one_miss_is_reported_when_the_primary_is_called_after_all(self) -> None:
+        backup = Flaky()
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            cache=CacheConfig(),
+            fallback=FallbackConfig(alternatives=[backup], **COOLDOWN),
+            listeners=[events.append],
+        )
+        async def primary(prompt: str) -> str:
+            if prompt == "bad":
+                raise ConnectionError("primary is down")
+            return f"primary: {prompt}"
+
+        assert await primary("bad") == "backup: bad"
+        backup.down = True
+        events.clear()
+
+        assert await primary("new") == "primary: new"
+        assert _types(events).count(EventType.CACHE_MISS) == 1
+
+    async def test_uncached_call_goes_to_the_handler(self) -> None:
+        events: list[ResilienceEvent] = []
+
+        @resilient(
+            cache=CacheConfig(),
+            fallback=FallbackConfig(handler=lambda exc: "handled", **COOLDOWN),
+            listeners=[events.append],
+        )
+        async def primary(prompt: str) -> str:
+            if prompt == "bad":
+                raise ConnectionError("primary is down")
+            return f"primary: {prompt}"
+
+        assert await primary("bad") == "handled"
+        events.clear()
+
+        assert await primary("new") == "handled"
+        assert _types(events) == [EventType.CACHE_MISS, EventType.FALLBACK_USED]

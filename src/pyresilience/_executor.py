@@ -20,6 +20,7 @@ import time
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Optional, Type, Union
 
 from pyresilience._bulkhead import AsyncBulkhead, Bulkhead
@@ -337,16 +338,20 @@ class _SyncExecutor:
         router: _FallbackRouter = self._router  # type: ignore[assignment]
         cache = self._cache
         result: Any = _SENTINEL
+        report_miss: Optional[Callable[[], None]] = None
         if cache is not None and router.primary_cooling():
             # The cache comes first in the pipeline, also while the primary is skipped
             result = cache.get(ResultCache.make_key(*args, **kwargs))
             if self._has_listeners:
-                hit = result is not _SENTINEL
-                event = EventType.CACHE_HIT if hit else EventType.CACHE_MISS
-                _emit(self._listeners, event, func_name)
+                if result is not _SENTINEL:
+                    _emit(self._listeners, EventType.CACHE_HIT, func_name)
+                else:
+                    # Reported when a fallback answers. If the primary is called after
+                    # all, the core looks the cache up again and reports the miss itself.
+                    report_miss = partial(_emit, self._listeners, EventType.CACHE_MISS, func_name)
         if result is _SENTINEL:
             result = router.run_sync(
-                self._execute_core, func, func_name, args, kwargs, self._listeners
+                self._execute_core, func, func_name, args, kwargs, self._listeners, report_miss
             )
         if self._stream_idle > 0:
             result = _wrap_stream(result, self._stream_idle, func_name, self._listeners)
@@ -1023,16 +1028,20 @@ class _AsyncExecutor:
         router: _FallbackRouter = self._router  # type: ignore[assignment]
         cache = self._cache
         result: Any = _SENTINEL
+        report_miss: Optional[Callable[[], None]] = None
         if cache is not None and router.primary_cooling():
             # The cache comes first in the pipeline, also while the primary is skipped
             result = cache.get(AsyncResultCache.make_key(*args, **kwargs))
             if self._has_listeners:
-                hit = result is not _SENTINEL
-                event = EventType.CACHE_HIT if hit else EventType.CACHE_MISS
-                _emit(self._listeners, event, func_name)
+                if result is not _SENTINEL:
+                    _emit(self._listeners, EventType.CACHE_HIT, func_name)
+                else:
+                    # Reported when a fallback answers. If the primary is called after
+                    # all, the core looks the cache up again and reports the miss itself.
+                    report_miss = partial(_emit, self._listeners, EventType.CACHE_MISS, func_name)
         if result is _SENTINEL:
             result = await router.run_async(
-                self._execute_core, func, func_name, args, kwargs, self._listeners
+                self._execute_core, func, func_name, args, kwargs, self._listeners, report_miss
             )
         if self._stream_idle > 0:
             result = _wrap_stream(result, self._stream_idle, func_name, self._listeners)
