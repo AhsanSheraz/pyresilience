@@ -35,6 +35,9 @@ _INF = float("inf")
 _syncer_lock = threading.Lock()
 # Seconds without backend calls after a failed one, unless the config asks for more
 _MIN_OUTAGE_PAUSE = 1.0
+# Longest time the other calls keep skipping the backend while one call is trying it
+# again. It only matters when that call does not report back.
+_MAX_RETRY_WAIT = 30.0
 
 
 class _Syncer:
@@ -143,6 +146,8 @@ class _SharedWindows:
     After a failed backend call the backend is left alone for ``pause`` seconds:
     calls are answered at once according to ``fail_open`` instead of each waiting
     for the client's own timeout. When the pause is over, one call tries again.
+    Until that call reports back, the others keep being answered at once, so at
+    most one call at a time waits for a backend that is down.
     """
 
     __slots__ = (
@@ -193,6 +198,12 @@ class _SharedWindows:
             self._failing = False
             self._down_until = 0.0
 
+    def _not_tried(self) -> None:
+        """The call had nothing to send to the backend, so it learned nothing about it."""
+        if self._down_until:
+            # This call was the one to try the backend again: the next call does it
+            self._down_until = time.monotonic()
+
     def _paused(self) -> bool:
         """True while the backend is left alone after a failure."""
         until = self._down_until
@@ -201,8 +212,9 @@ class _SharedWindows:
         now = time.monotonic()
         if now < until:
             return True
-        # The pause is over: this call tries the backend, the others keep skipping it
-        self._down_until = now + self._pause
+        # The pause is over: this call tries the backend. The others keep skipping it
+        # until this call reports back, however long the client takes to give up.
+        self._down_until = now + max(self._pause, _MAX_RETRY_WAIT)
         return False
 
     def _unavailable(self, count: int) -> tuple[bool, float, str, list[Optional[str]]]:
@@ -237,6 +249,8 @@ class _SharedWindows:
                 if total > self._capacities[index]:
                     for taken_key, taken_cost, taken_period in taken:
                         backend.incr(taken_key, -taken_cost, ttl=taken_period * 2)
+                    # The backend answered: a full window is not an outage
+                    self._backend_ok()
                     wait = (int(now // period) + 1) * period - now
                     return False, wait, self._names[index], windows
         except Exception:
@@ -247,7 +261,10 @@ class _SharedWindows:
                 except Exception:
                     break
             return self._unavailable(len(costs))
-        self._backend_ok()
+        if taken:
+            self._backend_ok()
+        else:
+            self._not_tried()
         return True, 0.0, "", windows
 
     def charge(self, costs: list[float]) -> Optional[list[Optional[str]]]:
@@ -260,16 +277,21 @@ class _SharedWindows:
             return None
         now = time.time()
         windows: list[Optional[str]] = [None] * len(costs)
+        sent = False
         try:
             for index, cost in enumerate(costs):
                 if cost > 0:
                     key = self._window_key(index, now)
                     self._backend.incr(key, cost, ttl=self._periods[index] * 2)
                     windows[index] = key
+                    sent = True
         except Exception:
             self._backend_failed()
             return None
-        self._backend_ok()
+        if sent:
+            self._backend_ok()
+        else:
+            self._not_tried()
         return windows
 
     def adjust(self, deltas: list[float], windows: Optional[list[Optional[str]]]) -> None:
@@ -283,6 +305,7 @@ class _SharedWindows:
         if self._paused():
             return
         now = time.time()
+        sent = False
         try:
             for index, delta in enumerate(deltas):
                 if not delta:
@@ -291,10 +314,14 @@ class _SharedWindows:
                 ttl = self._periods[index] * 2
                 if delta < 0 or (windows is not None and windows[index] == current):
                     self._backend.incr(current, -delta, ttl=ttl)
+                    sent = True
         except Exception:
             self._backend_failed()
-        else:
+            return
+        if sent:
             self._backend_ok()
+        else:
+            self._not_tried()
 
 
 class _SyncedRetryBudget(RetryBudget):
