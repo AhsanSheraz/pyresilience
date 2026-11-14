@@ -164,5 +164,7 @@ With alternatives or a cooldown configured, a failing call emits `FAILURE` for t
 ## Limits
 
 - A stream that already started is not covered: alternatives run only when the call itself fails. Combine with `TimeoutConfig.stream_idle_seconds` to bound a stalled stream.
-- Results of alternatives are not written to the result cache.
+- Results of alternatives are not written to the result cache. Cached results of the decorated function are still served while it cools down.
+- Alternatives run outside the timeout and the overall deadline of the decorated function. Decorate an alternative with `@resilient(timeout=...)` to bound it.
+- Local rejections (rate limit, bulkhead, open circuit) count toward the failure streak like errors of the function do. With `cooldown_threshold=1`, one rejected call starts a cooldown.
 - Cooldown state lives in the process. Under a [registry](../advanced/registry.md) name it is shared by sync and async functions.

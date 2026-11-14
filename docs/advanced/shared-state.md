@@ -14,10 +14,13 @@ from pyresilience import (
 )
 from pyresilience.contrib.redis import RedisBackend
 
-shared = SharedStateConfig(
-    backend=RedisBackend(redis.Redis(host="localhost", port=6379)),
-    key="payment-api",
+client = redis.Redis(
+    host="localhost",
+    port=6379,
+    socket_connect_timeout=0.5,   # rate-limited calls wait for this client,
+    socket_timeout=0.5,           # so keep its timeouts short
 )
+shared = SharedStateConfig(backend=RedisBackend(client), key="payment-api")
 
 @resilient(
     retry=RetryConfig(max_attempts=3),
@@ -39,19 +42,20 @@ pyresilience does not depend on a Redis library. `RedisBackend` takes the client
 | Pattern | Shared | Mechanism | Accuracy |
 |---|---|---|---|
 | Rate limiter | Yes | Every call is counted in the backend (atomic increment of a fixed window) | Acquisitions never exceed a window; corrections are conservative |
-| Circuit breaker | Yes | Background pass every `sync_interval` seconds | Open state arrives within one pass |
-| Retry budget | Yes | Background pass every `sync_interval` seconds | Close to one budget for the fleet |
+| Circuit breaker | Yes | Background pass every `sync_interval` seconds | Open state arrives within two passes: one publishes it, one adopts it |
+| Retry budget | Yes | Background pass every `sync_interval` seconds | Converges on one budget; a burst shorter than a pass is not capped |
 | Fallback cooldown | No | In-process | — |
 | Bulkhead | No | In-process | — |
 | Cache | No | In-process | — |
 
 ### Rate limiter
 
-Each acquisition increments a counter for the current window (`period` seconds long) in the backend. The increment is atomic, so all processes together cannot exceed the limit of a window. The local token bucket still applies first, which keeps one process from spending a whole window in a burst.
+Each acquisition increments a counter for the current window (`period` seconds long) in the backend. The increment is atomic, so all processes together cannot exceed the limit of a window. The local token bucket still applies first, so a single process stays within the limit on its own, also while the backend is down.
 
 - Weighted costs, several limits and reconciliation with the real cost all carry over to the shared counters.
 - One backend round trip per call (plus one per additional limit). For async functions the round trip runs in a worker thread, so the event loop is not blocked.
 - Shared windows are fixed windows aligned to the wall clock; the local limiter is a token bucket.
+- Fixed windows can pass up to twice the limit across a boundary: a full window at the end of one period and another at the start of the next. If the provider enforces a rolling window, set the limit with that in mind.
 - A correction after the call (`actual_cost`) goes to the window the call was counted in. If that window has already passed, unused units are not given back, because the later window never held them. Usage above the estimate is charged to the current window.
 - A pause from server feedback (`Retry-After`) applies to the process that received it. Other processes learn the same from their own responses.
 
@@ -59,7 +63,7 @@ Each acquisition increments a counter for the current window (`period` seconds l
 
 Every process keeps deciding locally, so a call never waits for the backend. A background pass exchanges:
 
-- **The open state.** When one instance opens, the others open within one pass and recover at the same moment.
+- **The open state.** When one instance opens, the others open within two passes at most (one publishes the state, one adopts it) and recover at the same moment.
 - **The failure streak** (consecutive-count mode). Failures of all instances add up, so `failure_threshold=5` means five failures across the fleet. A success on any instance ends the shared streak. The streak is exchanged once per pass, so the exact order of failures and successes between instances inside one interval is not preserved.
 
 Sliding-window breakers share only the open state: a failure rate is the same on every instance and needs no adding up.
@@ -69,7 +73,7 @@ Sliding-window breakers share only the open state: a failure rate is the same on
 
 ### Retry budget
 
-Each pass publishes the retries a process spent and debits the retries the others spent. The fleet stays close to one budget; between two passes a process can still spend what it believed it had.
+Each pass publishes the retries a process spent and debits the retries the others spent. Over time the fleet converges on one budget. Between two passes each process still spends what it believed it had, so a burst of retries that is shorter than `sync_interval` is limited by every process's own budget, not by the shared one. Use a short `sync_interval` when retry storms are the concern.
 
 ## Configuration
 
@@ -108,6 +112,10 @@ A backend failure never raises into your call.
 | Retry budget | Keeps working on local state | Same |
 
 The first failure of an outage is logged as a warning on the `pyresilience` logger, the following ones at debug level.
+
+After a failed backend call, rate limiting leaves the backend alone for `sync_interval` seconds (at least one second) and answers at once according to `fail_open`. When that pause is over, one call tries the backend again. So an outage costs one slow call per pause, not one per call.
+
+That first call still waits for the client to give up. Give the client you pass to `RedisBackend` short timeouts (`socket_connect_timeout`, `socket_timeout`) and few or no retries of its own: the client's defaults can add up to many seconds.
 
 ## With the Registry
 
@@ -151,7 +159,7 @@ from pyresilience.contrib.redis import RedisBackend
 backend = RedisBackend(redis.Redis.from_url("redis://localhost:6379/0"), prefix="myapp:")
 ```
 
-It uses `GET`, `SET` with `PX`, `INCRBYFLOAT`, `PEXPIRE` and `DEL`. Keys are written with an expiry, so abandoned state cleans itself up.
+It uses `GET`, `SET` with `PX`, `INCRBYFLOAT`, `PEXPIRE` and `DEL`. Keys are written with an expiry, so abandoned state cleans itself up. Increment and expiry travel in one pipeline (one round trip) when the client offers `pipeline()`.
 
 ### Writing Your Own
 
@@ -174,4 +182,5 @@ class MyBackend:
 - **Clocks.** Shared timestamps use the wall clock. Clock skew between hosts shifts the shared recovery moment of a circuit breaker and the window boundaries of a rate limit by the skew. Keep hosts on NTP.
 - **Manual control.** `reset()`, `force_open()` and `force_close()` act on the local breaker. A reset also clears the shared record at the next pass; instances that already adopted the open state stay open until their recovery time.
 - **Background thread.** One daemon thread per `SharedStateConfig` runs the passes. It stops when nothing uses the config any more.
+- **Forked workers.** Threads do not survive `fork()`. A forked child (gunicorn with `--preload`, uWSGI, Celery's prefork pool, `multiprocessing` with the fork start method) starts its own background thread automatically, so functions decorated before the fork keep syncing.
 - **Latency.** Only rate limiting adds a backend round trip to the call. Circuit breaker and retry budget cost nothing on the call path.

@@ -13,23 +13,23 @@
 - **`llm_policy()` options**: `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit`, `rate_limit_max_wait` (defaults unchanged)
 - **Fallback alternatives**: `FallbackConfig.alternatives` are tried in order with the original arguments before the handler. See [Fallback](core/fallback.md)
 - **Fallback cooldown**: `cooldown` and `cooldown_threshold` skip a target that keeps failing; new `EventType.COOLDOWN`
-- **Shared state across processes**: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state; `InMemoryBackend` in the core, `contrib.redis.RedisBackend` around a Redis client you supply. Still zero dependencies. See [Shared State](advanced/shared-state.md)
+- **Shared state across processes**: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state; `InMemoryBackend` in the core, `contrib.redis.RedisBackend` around a Redis client you supply. Still zero dependencies. Works in forked workers, and a backend outage costs one slow call per pause instead of one per call. See [Shared State](advanced/shared-state.md)
 - **Python 3.15**: supported and tested in CI
 
 ### Changes
 - **Registry**: sync and async functions under one name now share the circuit breaker, rate limits, retry budget and fallback cooldown state (bulkhead slots and cached results stay separate per call style)
-- **Total-deadline timeouts** stop retrying as soon as the time left cannot cover the next retry wait and raise `ResilienceTimeoutError` chained from the last error, instead of sleeping through the remaining waits
+- **Total-deadline timeouts** stop retrying as soon as the time left cannot cover the next retry wait and raise `ResilienceTimeoutError` chained from the last error, instead of sleeping through the remaining waits. A fallback for the error that was being retried still applies
 - **Rate limit rejections** name the limit in the event detail and error message when `cost`, `limits`, `feedback` or `charge_retries` is configured
 
 ### Bug Fixes
 - `ResilienceRegistry.register()` on an existing name now drops the cached executors of that name
 
 ### Performance
-- No measurable cost for features that are not configured: every `bench_overhead.py` configuration is between -3.6% and +1.9% of 0.4.1 (`bench_compare.py`, fastest of 25 alternating rounds), which is run-to-run noise
+- No measurable cost for features that are not configured: every `bench_overhead.py` configuration is between -1.6% and +2.9% of 0.4.1 (`bench_compare.py`, median of 25 alternating rounds), which is run-to-run noise
 - New `benchmarks/bench_new_features.py` and `benchmarks/bench_compare.py`; results in [Performance](advanced/performance.md)
 
 ### Tests
-- 797 tests (up from 464), 98% branch coverage
+- 846 tests (up from 464), 98% branch coverage
 - Passing on Python 3.15.1
 
 ---

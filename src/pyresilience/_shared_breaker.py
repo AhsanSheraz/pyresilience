@@ -92,6 +92,14 @@ class _SyncedCircuitBreaker(CircuitBreaker):
             self._fail_total += 1
         return state
 
+    def _after_fork(self) -> None:
+        """Runs in a forked child: take new locks; the parent publishes its own counts."""
+        self._lock = threading.Lock()
+        self._counts_lock = threading.Lock()
+        self._sync_lock = threading.Lock()
+        self._seen_fail = self._fail_total
+        self._seen_succ = self._succ_total
+
     def _open_until(self, remaining: float) -> float:
         """Open locally so that recovery starts in *remaining* seconds."""
         if remaining > self._recovery_timeout:

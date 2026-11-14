@@ -30,7 +30,12 @@ from pyresilience._exceptions import (
     CircuitOpenError,
     ResilienceTimeoutError,
 )
-from pyresilience._fallback import _apply_fallback, _apply_fallback_async, _FallbackRouter
+from pyresilience._fallback import (
+    _apply_fallback,
+    _apply_fallback_async,
+    _fallback_match,
+    _FallbackRouter,
+)
 from pyresilience._logging import _call_id_counter, call_id_var
 from pyresilience._parts import _build_parts, _Parts
 from pyresilience._rate_limiter import AsyncRateLimiter, RateLimiter, RateLimitExceededError
@@ -329,9 +334,20 @@ class _SyncExecutor:
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         """Run the call through the fallback router (alternatives and cooldown)."""
-        result = self._router.run_sync(  # type: ignore[union-attr]
-            self._execute_core, func, func_name, args, kwargs, self._listeners
-        )
+        router: _FallbackRouter = self._router  # type: ignore[assignment]
+        cache = self._cache
+        result: Any = _SENTINEL
+        if cache is not None and router.primary_cooling():
+            # The cache comes first in the pipeline, also while the primary is skipped
+            result = cache.get(ResultCache.make_key(*args, **kwargs))
+            if self._has_listeners:
+                hit = result is not _SENTINEL
+                event = EventType.CACHE_HIT if hit else EventType.CACHE_MISS
+                _emit(self._listeners, event, func_name)
+        if result is _SENTINEL:
+            result = router.run_sync(
+                self._execute_core, func, func_name, args, kwargs, self._listeners
+            )
         if self._stream_idle > 0:
             result = _wrap_stream(result, self._stream_idle, func_name, self._listeners)
         return result
@@ -371,10 +387,13 @@ class _SyncExecutor:
         err = ResilienceTimeoutError(f"{func_name} exceeded total timeout budget of {total}s")
         err.__cause__ = cause
         fallback_cfg = self._fallback_cfg
-        if fallback_cfg is not None and isinstance(err, self._fallback_on):
-            if has_listeners:
-                _emit(listeners, EventType.FALLBACK_USED, func_name, error=err)
-            return _apply_fallback(fallback_cfg, err)
+        if fallback_cfg is not None:
+            # A fallback for the error that was being retried still applies
+            matched = _fallback_match(err, self._fallback_on)
+            if matched is not None:
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=err)
+                return _apply_fallback(fallback_cfg, matched)
         if has_listeners:
             _emit(listeners, EventType.FAILURE, func_name, error=err)
         raise err
@@ -1001,9 +1020,20 @@ class _AsyncExecutor:
         self, func: Callable[..., Any], func_name: str, *args: Any, **kwargs: Any
     ) -> Any:
         """Run the call through the fallback router (alternatives and cooldown)."""
-        result = await self._router.run_async(  # type: ignore[union-attr]
-            self._execute_core, func, func_name, args, kwargs, self._listeners
-        )
+        router: _FallbackRouter = self._router  # type: ignore[assignment]
+        cache = self._cache
+        result: Any = _SENTINEL
+        if cache is not None and router.primary_cooling():
+            # The cache comes first in the pipeline, also while the primary is skipped
+            result = cache.get(AsyncResultCache.make_key(*args, **kwargs))
+            if self._has_listeners:
+                hit = result is not _SENTINEL
+                event = EventType.CACHE_HIT if hit else EventType.CACHE_MISS
+                _emit(self._listeners, event, func_name)
+        if result is _SENTINEL:
+            result = await router.run_async(
+                self._execute_core, func, func_name, args, kwargs, self._listeners
+            )
         if self._stream_idle > 0:
             result = _wrap_stream(result, self._stream_idle, func_name, self._listeners)
         return result
@@ -1043,10 +1073,13 @@ class _AsyncExecutor:
         err = ResilienceTimeoutError(f"{func_name} exceeded total timeout budget of {total}s")
         err.__cause__ = cause
         fallback_cfg = self._fallback_cfg
-        if fallback_cfg is not None and isinstance(err, self._fallback_on):
-            if has_listeners:
-                _emit(listeners, EventType.FALLBACK_USED, func_name, error=err)
-            return await _apply_fallback_async(fallback_cfg, err)
+        if fallback_cfg is not None:
+            # A fallback for the error that was being retried still applies
+            matched = _fallback_match(err, self._fallback_on)
+            if matched is not None:
+                if has_listeners:
+                    _emit(listeners, EventType.FALLBACK_USED, func_name, error=err)
+                return await _apply_fallback_async(fallback_cfg, matched)
         if has_listeners:
             _emit(listeners, EventType.FAILURE, func_name, error=err)
         raise err

@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `llm_policy()` options `tokens_per_minute`, `token_cost`, `token_usage`, `adaptive_rate_limit` and `rate_limit_max_wait`. Defaults are unchanged.
 - Fallback alternatives: `FallbackConfig.alternatives` are tried in order with the original arguments before the handler, for example the same request against another provider.
 - Fallback cooldown: `FallbackConfig.cooldown` and `cooldown_threshold` skip a target (the decorated function or an alternative) that keeps failing. New `EventType.COOLDOWN`.
-- Shared state across processes: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state. `InMemoryBackend` ships in the core; `pyresilience.contrib.redis.RedisBackend` wraps a Redis client you supply, so the package still has no dependencies (#29).
+- Shared state across processes: `SharedStateConfig` with a pluggable `StateBackend` shares circuit breaker, rate limit and retry budget state. `InMemoryBackend` ships in the core; `pyresilience.contrib.redis.RedisBackend` wraps a Redis client you supply, so the package still has no dependencies (#29). Forked workers start their own sync thread, and during a backend outage rate limiting skips the backend for `sync_interval` seconds after a failed call instead of waiting on every call.
 - `shared_state` parameter on `@resilient` and `ResilienceConfig`.
 - `RetryBudget.refund()` gives back a retry token that was acquired but not used.
 - Python 3.15 support: classifier, CI matrix and tox environment.
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Registry: sync and async functions registered under one name now share the circuit breaker, rate limits, retry budget and fallback cooldown state. Before, each call style had its own. Bulkhead slots and cached results stay separate per call style.
-- Total-deadline timeouts (`per_attempt=False`, and the new `total_seconds`) stop retrying as soon as the time left cannot cover the next retry wait, and raise `ResilienceTimeoutError` chained from the last error. Before, the call slept through the remaining retry waits first.
+- Total-deadline timeouts (`per_attempt=False`, and the new `total_seconds`) stop retrying as soon as the time left cannot cover the next retry wait, and raise `ResilienceTimeoutError` chained from the last error. Before, the call slept through the remaining retry waits first. A fallback whose `fallback_on` matches the error that was being retried still applies.
 - With `cost`, `limits`, `feedback` or `charge_retries` configured, the `RATE_LIMITED` event detail and the `RateLimitExceededError` message name the limit that rejected the call.
 
 ### Fixed

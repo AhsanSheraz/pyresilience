@@ -13,6 +13,7 @@ from pyresilience._exceptions import (
     CircuitOpenError,
     RateLimitExceededError,
     ResilienceError,
+    ResilienceTimeoutError,
 )
 from pyresilience._types import EventType, FallbackConfig, ResilienceListener
 
@@ -41,6 +42,24 @@ async def _apply_fallback_async(fallback_cfg: FallbackConfig, exc: BaseException
             return await handler(exc)
         return handler(exc)
     return handler
+
+
+def _fallback_match(
+    exc: BaseException, types: tuple[Type[BaseException], ...]
+) -> Optional[BaseException]:
+    """Return the error a fallback set up for *types* applies to, or None.
+
+    That is *exc* itself, or, when a spent deadline stopped the retries, the error
+    that was being retried: the deadline replaces it with a timeout error, which
+    must not hide it from ``fallback_on``.
+    """
+    if isinstance(exc, types):
+        return exc
+    if isinstance(exc, ResilienceTimeoutError):
+        cause = exc.__cause__
+        if cause is not None and isinstance(cause, types):
+            return cause
+    return None
 
 
 def _needs_router(config: Optional[FallbackConfig]) -> bool:
@@ -107,7 +126,15 @@ class _FallbackRouter:
     def _eligible(self, exc: BaseException) -> bool:
         if self._ignore_on and isinstance(exc, self._ignore_on):
             return False
-        return isinstance(exc, self._eligible_types)
+        return _fallback_match(exc, self._eligible_types) is not None
+
+    def _handler_error(self, error: BaseException) -> BaseException:
+        """The error handed to the handler: the one ``fallback_on`` matched."""
+        return _fallback_match(error, self._eligible_types) or error
+
+    def primary_cooling(self) -> bool:
+        """True while calls skip the primary function."""
+        return self._skip_primary()
 
     def _skip_primary(self) -> bool:
         """The primary is cooling down and something else can take the call."""
@@ -233,7 +260,7 @@ class _FallbackRouter:
         if self._has_handler:
             if listeners:
                 _emit(listeners, EventType.FALLBACK_USED, func_name, error=error)
-            return _apply_fallback(self._config, error)
+            return _apply_fallback(self._config, self._handler_error(error))
         if skipped:
             # Nothing else could take the call after all: a cooldown never fails a call
             # by itself, so the primary is called
@@ -302,7 +329,7 @@ class _FallbackRouter:
         if self._has_handler:
             if listeners:
                 _emit(listeners, EventType.FALLBACK_USED, func_name, error=error)
-            return await _apply_fallback_async(self._config, error)
+            return await _apply_fallback_async(self._config, self._handler_error(error))
         if skipped:
             # Nothing else could take the call after all: a cooldown never fails a call
             # by itself, so the primary is called

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import queue
 import threading
 from typing import Any, Optional
@@ -101,9 +102,11 @@ class _IdleTimeoutIterator:
         if self._thread is None:
             # The thread holds the queues and the wrapped iterator, not this
             # wrapper, so an abandoned wrapper can still be collected
+            # The stream body runs in a copy of the caller's context, so
+            # context variables set by the caller are visible to it
             self._thread = threading.Thread(
-                target=self._read,
-                args=(self._it, self._requests, self._results),
+                target=contextvars.copy_context().run,
+                args=(self._read, self._it, self._requests, self._results),
                 name="pyresilience-stream",
                 daemon=True,
             )

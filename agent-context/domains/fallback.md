@@ -26,6 +26,7 @@ Router mode (`_FallbackRouter.run_sync` / `run_async`):
 4. else         the last error is raised
 ```
 
+- Matched error: `_fallback_match(exc, types)` (`_fallback.py`) returns `exc`, or the `__cause__` of a `ResilienceTimeoutError` (the error a spent deadline stopped retrying) when that matches. `_FallbackRouter._eligible` uses it and `_handler_error()` hands the matched error to the handler. `_FallbackRouter.primary_cooling()` tells the executor the primary is being skipped, so it can serve a cached result first.
 - Eligible errors: `fallback_on` types plus the executor rejections (`CircuitOpenError`, `RateLimitExceededError`, `BulkheadFullError`); never types in `RetryConfig.ignore_on`. Other exceptions propagate without touching cooldown.
 - Cooldown: a target (primary or alternative) enters cooldown after `cooldown_threshold` consecutive failures and is skipped for `cooldown` seconds; `COOLDOWN` is emitted when it enters. A cooldown never fails a call alone: when nothing else is ready the primary is called anyway. When a cooldown has expired, the next failure starts the streak again from zero. In `run_sync` an alternative that returns an awaitable raises `TypeError`.
 - The router is built into `_Parts`, so a registry name shares cooldown state between its sync and async executors. When a router exists the executor clears its own `_fallback_cfg` and `_fallback_on`, so failures reach the router instead of the inline handler.
@@ -60,7 +61,7 @@ None beyond the executors (`_execute_routed` in each executor, selected in `_ent
 | `src/pyresilience/_types.py` | `FallbackConfig` (`alternatives`, `cooldown`, `cooldown_threshold`), `EventType.COOLDOWN` |
 | `src/pyresilience/_executor.py` | `_execute_routed` (sync and async) |
 | `src/pyresilience/_parts.py` | builds the router |
-| `tests/test_fallback.py`, `tests/test_fallback_cooldown.py`, `tests/test_fallback_cooldown_async.py` | behaviour tests |
+| `tests/test_fallback.py`, `tests/test_fallback_cooldown.py`, `tests/test_fallback_cooldown_async.py`, `tests/test_fallback_cooldown_cache.py`, `tests/test_timeout_deadline_fallback.py` | behaviour tests |
 
 <!-- /agent-updatable -->
 

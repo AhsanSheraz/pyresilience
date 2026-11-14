@@ -9,8 +9,8 @@
 ## Behaviour
 
 - `RedisBackend(client, prefix="pyresilience:")`: every key gets the prefix.
-- Uses only `get`, `set` (with `px` for a TTL), `incrbyfloat`, `pexpire`, `delete` on the client.
-- `get` decodes bytes to `str`. `incr` uses `INCRBYFLOAT` (atomic on the server) and sets the expiry in a second call.
+- Uses only `get`, `set` (with `px` for a TTL), `incrbyfloat`, `pexpire`, `delete` and, when the client has it, `pipeline` on the client.
+- `get` decodes bytes to `str`. `incr` uses `INCRBYFLOAT` (atomic on the server). With a ttl it also sends `PEXPIRE`: through `client.pipeline(transaction=False)` in one round trip when the client has `pipeline`, else as a second call. Without a ttl it is a single `incrbyfloat`.
 - Wire it with `SharedStateConfig(backend=RedisBackend(client), key=...)` (`../domains/shared-state.md`).
 
 ---

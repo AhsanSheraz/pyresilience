@@ -20,6 +20,7 @@ Order of operations in `_execute_core` (verified in code, both executors):
 
 ```
 1. cache lookup        hit -> return (CACHE_HIT); miss -> CACHE_MISS, take per-key lock, re-check
+                       (routed mode, primary cooling down: looked up in _execute_routed before the router runs)
 2. circuit breaker     allow_request() false -> CIRCUIT_OPEN, fallback if configured else CircuitOpenError
 3. rate limiter        acquire() false -> RATE_LIMITED, fallback if configured else RateLimitExceededError
 4. bulkhead            acquire() false -> BULKHEAD_REJECTED, fallback if configured else BulkheadFullError
@@ -75,7 +76,7 @@ Not applicable.
 | `src/pyresilience/_events.py` | `_emit` |
 | `src/pyresilience/_fallback.py` | `_apply_fallback(_async)`, `_FallbackRouter` (`fallback.md`) |
 | `src/pyresilience/_parts.py` | `_Parts`, `_build_parts`: breaker, limiter, retry budget, router built once per executor or per registry name (`shared-state.md`) |
-| `src/pyresilience/_stream.py` | idle-timeout iterator wrappers; each sync stream is read by its own daemon thread (not the timeout pool); `with` / `async with` are forwarded |
+| `src/pyresilience/_stream.py` | idle-timeout iterator wrappers; each sync stream is read by its own daemon thread (not the timeout pool) that runs in `contextvars.copy_context()` taken at the first `next()`, so the stream body sees the caller's context variables; `with` / `async with` are forwarded |
 | `src/pyresilience/_registry.py` | `ResilienceRegistry`: `register`, `set_default`, `get`, `get_or_default`, `decorator`, `get_executor`, `names`, `unregister`, `clear` |
 | `src/pyresilience/_health.py` | `health_check` |
 | `src/pyresilience/_bulkhead.py` | `Bulkhead` (lock+counter, or semaphore when `max_wait > 0`), `AsyncBulkhead` (semaphore re-created per event loop) |
@@ -93,9 +94,9 @@ Verified in `src/pyresilience/_executor.py`.
 | `_entry` | Chosen once in `__init__`: `_execute_routed` when a fallback router exists, else `_execute_stream` when `TimeoutConfig.stream_idle_seconds` is set, else `_execute_core`. `execute()` calls `self._entry` |
 | `_execute_core` | The pipeline of the State Model section (cache, breaker, limiter, bulkhead, retry loop) |
 | `_execute_stream` | Runs the core, then wraps an iterator or async iterator result with the idle limit |
-| `_execute_routed` | Runs `_FallbackRouter.run_sync` / `run_async` around `_execute_core`; wraps streams afterwards; the executor's own `_fallback_cfg` and `_fallback_on` are cleared when a router exists |
+| `_execute_routed` | Runs `_FallbackRouter.run_sync` / `run_async` around `_execute_core`; wraps streams afterwards; the executor's own `_fallback_cfg` and `_fallback_on` are cleared when a router exists. When a cache is configured and `router.primary_cooling()` is true, the cache is looked up first (CACHE_HIT returns the cached value, CACHE_MISS goes on to the router), so the cache stays first while the primary is skipped |
 | `_timeout_total` | Overall deadline in seconds: `TimeoutConfig.seconds` when `per_attempt=False`, else `total_seconds`, else 0 (none) |
-| `_on_total_timeout(func_name, listeners, cause)` | Called by the retry loops when the deadline is spent: emits `TIMEOUT` ("exceeded total ... budget") unless the last attempt itself timed out and already reported it, then fallback if `fallback_on` matches, else `FAILURE` and raises `ResilienceTimeoutError` with `__cause__` set to the last error |
+| `_on_total_timeout(func_name, listeners, cause)` | Called by the retry loops when the deadline is spent: emits `TIMEOUT` ("exceeded total ... budget") unless the last attempt itself timed out and already reported it, then fallback if `fallback_on` matches the timeout error or its cause (`_fallback_match`; the handler receives the matched error, the `FALLBACK_USED` event still carries the timeout error), else `FAILURE` and raises `ResilienceTimeoutError` with `__cause__` set to the last error |
 | `_on_rate_limited(func_name, listeners, blocker)` | Rejection path of the weighted limiter (`rate-limiting.md`) |
 | deadline in `_execute_with_retry` | `deadline = monotonic() + _timeout_total`; each attempt gets `min(seconds, time left)`; a retry wait that cannot fit in the time left ends in `_on_total_timeout` |
 

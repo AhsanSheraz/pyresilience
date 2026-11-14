@@ -10,11 +10,15 @@ Two mechanisms, chosen per pattern:
   backend every ``sync_interval`` seconds. The call path does no backend I/O.
 
 The circuit breaker part lives in ``pyresilience._shared_breaker``.
+
+Threads do not survive ``os.fork()``. A hook registered with
+``os.register_at_fork`` gives a forked child new locks and its own sync thread.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import weakref
@@ -29,6 +33,8 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("pyresilience")
 _INF = float("inf")
 _syncer_lock = threading.Lock()
+# Seconds without backend calls after a failed one, unless the config asks for more
+_MIN_OUTAGE_PAUSE = 1.0
 
 
 class _Syncer:
@@ -44,15 +50,31 @@ class _Syncer:
         self._lock = threading.Lock()
         self._thread: Optional[threading.Thread] = None
         self._failing = False
+        _syncers.add(self)
+
+    def _start(self) -> None:
+        """Start the sync thread. The caller holds the lock."""
+        self._thread = threading.Thread(
+            target=self._run, name="pyresilience-state-sync", daemon=True
+        )
+        self._thread.start()
 
     def add(self, part: Any) -> None:
         with self._lock:
             self._parts.append(weakref.ref(part))
             if self._interval > 0 and self._thread is None:
-                self._thread = threading.Thread(
-                    target=self._run, name="pyresilience-state-sync", daemon=True
-                )
-                self._thread.start()
+                self._start()
+
+    def _after_fork(self) -> None:
+        """Runs in a forked child: the parent's thread is gone and its locks may be held."""
+        self._lock = threading.Lock()
+        self._thread = None
+        parts = self._live_parts()
+        for part in parts:
+            part._after_fork()
+        if parts and self._interval > 0:
+            with self._lock:
+                self._start()
 
     def _live_parts(self) -> list[Any]:
         with self._lock:
@@ -86,6 +108,21 @@ class _Syncer:
                         return
 
 
+_syncers: weakref.WeakSet[_Syncer] = weakref.WeakSet()
+
+
+def _after_fork_in_child() -> None:
+    """Give a forked child working shared state: new locks and a new sync thread."""
+    global _syncer_lock
+    _syncer_lock = threading.Lock()
+    for syncer in list(_syncers):
+        syncer._after_fork()
+
+
+if hasattr(os, "register_at_fork"):  # not on Windows
+    os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
 def _syncer_for(config: SharedStateConfig) -> _Syncer:
     """Return the syncer of a shared-state config, creating it on first use."""
     with _syncer_lock:
@@ -102,9 +139,23 @@ class _SharedWindows:
     ``acquire`` adds a call's costs to the counters of the current windows and
     takes them back when any limit would be exceeded. Because the increment is
     atomic, the limit holds across every process that uses the same key.
+
+    After a failed backend call the backend is left alone for ``pause`` seconds:
+    calls are answered at once according to ``fail_open`` instead of each waiting
+    for the client's own timeout. When the pause is over, one call tries again.
     """
 
-    __slots__ = ("_backend", "_capacities", "_fail_open", "_failing", "_key", "_names", "_periods")
+    __slots__ = (
+        "_backend",
+        "_capacities",
+        "_down_until",
+        "_fail_open",
+        "_failing",
+        "_key",
+        "_names",
+        "_pause",
+        "_periods",
+    )
 
     def __init__(
         self,
@@ -114,6 +165,7 @@ class _SharedWindows:
         capacities: Sequence[float],
         periods: Sequence[float],
         fail_open: bool,
+        pause: float = _MIN_OUTAGE_PAUSE,
     ) -> None:
         self._backend = backend
         self._key = key
@@ -122,6 +174,9 @@ class _SharedWindows:
         self._periods = list(periods)
         self._fail_open = fail_open
         self._failing = False
+        self._pause = max(_MIN_OUTAGE_PAUSE, pause)
+        # Monotonic time until which the backend is not called; 0 while it works
+        self._down_until = 0.0
 
     def _window_key(self, index: int, now: float) -> str:
         window = int(now // self._periods[index])
@@ -131,6 +186,31 @@ class _SharedWindows:
         log = _logger.debug if self._failing else _logger.warning
         log("Shared rate limit backend failed for %r", self._key, exc_info=True)
         self._failing = True
+        self._down_until = time.monotonic() + self._pause
+
+    def _backend_ok(self) -> None:
+        if self._failing:
+            self._failing = False
+            self._down_until = 0.0
+
+    def _paused(self) -> bool:
+        """True while the backend is left alone after a failure."""
+        until = self._down_until
+        if not until:
+            return False
+        now = time.monotonic()
+        if now < until:
+            return True
+        # The pause is over: this call tries the backend, the others keep skipping it
+        self._down_until = now + self._pause
+        return False
+
+    def _unavailable(self, count: int) -> tuple[bool, float, str, list[Optional[str]]]:
+        """Answer for a call that cannot be counted in the backend."""
+        if self._fail_open:
+            # Keep serving on the local limit alone until the backend is back
+            return True, 0.0, "", [None] * count
+        return False, _INF, "state backend unavailable", [None] * count
 
     def acquire(self, costs: list[float]) -> tuple[bool, float, str, list[Optional[str]]]:
         """Count a call against every shared window.
@@ -139,6 +219,8 @@ class _SharedWindows:
         until the blocking window ends. ``windows`` names the counter each limit
         was counted in, so a later correction reaches the same window.
         """
+        if self._paused():
+            return self._unavailable(len(costs))
         backend = self._backend
         now = time.time()
         windows: list[Optional[str]] = [None] * len(costs)
@@ -164,11 +246,8 @@ class _SharedWindows:
                     backend.incr(taken_key, -taken_cost, ttl=taken_period * 2)
                 except Exception:
                     break
-            if self._fail_open:
-                # Keep serving on the local limit alone until the backend is back
-                return True, 0.0, "", [None] * len(costs)
-            return False, _INF, "state backend unavailable", windows
-        self._failing = False
+            return self._unavailable(len(costs))
+        self._backend_ok()
         return True, 0.0, "", windows
 
     def charge(self, costs: list[float]) -> Optional[list[Optional[str]]]:
@@ -177,6 +256,8 @@ class _SharedWindows:
         Used for retry attempts. Returns the windows that were charged, or None
         when the backend could not be reached.
         """
+        if self._paused():
+            return None
         now = time.time()
         windows: list[Optional[str]] = [None] * len(costs)
         try:
@@ -188,6 +269,7 @@ class _SharedWindows:
         except Exception:
             self._backend_failed()
             return None
+        self._backend_ok()
         return windows
 
     def adjust(self, deltas: list[float], windows: Optional[list[Optional[str]]]) -> None:
@@ -198,6 +280,8 @@ class _SharedWindows:
         them, so giving them back there would let it exceed its limit. A negative
         delta (more used than reserved) is charged to the current window.
         """
+        if self._paused():
+            return
         now = time.time()
         try:
             for index, delta in enumerate(deltas):
@@ -209,6 +293,8 @@ class _SharedWindows:
                     self._backend.incr(current, -delta, ttl=ttl)
         except Exception:
             self._backend_failed()
+        else:
+            self._backend_ok()
 
 
 class _SyncedRetryBudget(RetryBudget):
@@ -252,6 +338,12 @@ class _SyncedRetryBudget(RetryBudget):
         with self._lock:
             self._tokens = min(self._capacity, self._tokens + 1.0)
             self._spent -= 1
+
+    def _after_fork(self) -> None:
+        """Runs in a forked child: take new locks; the parent publishes what it spent."""
+        self._lock = threading.Lock()
+        self._sync_lock = threading.Lock()
+        self._seen_spent = self._spent
 
     def sync(self) -> None:
         """Publish local consumption and absorb what other processes consumed."""

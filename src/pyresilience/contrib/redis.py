@@ -33,16 +33,19 @@ class RedisBackend:
 
     Args:
         client: A redis-py compatible client. Only ``get``, ``set``,
-            ``incrbyfloat``, ``pexpire`` and ``delete`` are used.
+            ``incrbyfloat``, ``pexpire``, ``delete`` and, when the client has
+            it, ``pipeline`` are used.
         prefix: Prepended to every key so several applications can share one
             Redis database. Defaults to ``"pyresilience:"``.
     """
 
-    __slots__ = ("_client", "_prefix")
+    __slots__ = ("_client", "_pipeline", "_prefix")
 
     def __init__(self, client: Any, prefix: str = "pyresilience:") -> None:
         self._client = client
         self._prefix = prefix
+        # With a pipeline, increment and expiry travel in one round trip
+        self._pipeline: Any = getattr(client, "pipeline", None)
 
     def get(self, key: str) -> Optional[str]:
         value: Any = self._client.get(self._prefix + key)
@@ -61,10 +64,17 @@ class RedisBackend:
     def incr(self, key: str, amount: float, ttl: Optional[float] = None) -> float:
         # INCRBYFLOAT is atomic on the server, so concurrent callers are all counted
         full_key = self._prefix + key
-        total = float(self._client.incrbyfloat(full_key, amount))
-        if ttl is not None:
-            self._client.pexpire(full_key, max(1, int(ttl * 1000)))
-        return total
+        if ttl is None:
+            return float(self._client.incrbyfloat(full_key, amount))
+        expiry = max(1, int(ttl * 1000))
+        if self._pipeline is None:
+            total = float(self._client.incrbyfloat(full_key, amount))
+            self._client.pexpire(full_key, expiry)
+            return total
+        pipe = self._pipeline(transaction=False)
+        pipe.incrbyfloat(full_key, amount)
+        pipe.pexpire(full_key, expiry)
+        return float(pipe.execute()[0])
 
     def delete(self, key: str) -> None:
         self._client.delete(self._prefix + key)

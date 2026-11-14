@@ -39,6 +39,47 @@ class FakeRedis:
         self.data.pop(key, None)
 
 
+class FakePipeline:
+    """Queues commands and runs them in one ``execute()``, like a redis-py pipeline."""
+
+    def __init__(self, client: PipelineRedis) -> None:
+        self.client = client
+        self.commands: list[tuple[str, tuple[Any, ...]]] = []
+
+    def incrbyfloat(self, key: str, amount: float) -> FakePipeline:
+        self.commands.append(("incrbyfloat", (key, amount)))
+        return self
+
+    def pexpire(self, key: str, milliseconds: int) -> FakePipeline:
+        self.commands.append(("pexpire", (key, milliseconds)))
+        return self
+
+    def execute(self) -> list[Any]:
+        self.client.round_trips += 1
+        return [getattr(FakeRedis, name)(self.client, *args) for name, args in self.commands]
+
+
+class PipelineRedis(FakeRedis):
+    """A client with pipelines that counts round trips."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.round_trips = 0
+        self.transactions: list[bool] = []
+
+    def incrbyfloat(self, key: str, amount: float) -> float:
+        self.round_trips += 1
+        return super().incrbyfloat(key, amount)
+
+    def pexpire(self, key: str, milliseconds: int) -> None:
+        self.round_trips += 1
+        super().pexpire(key, milliseconds)
+
+    def pipeline(self, transaction: bool = True) -> FakePipeline:
+        self.transactions.append(transaction)
+        return FakePipeline(self)
+
+
 class TestInMemoryBackend:
     def test_get_missing_key(self) -> None:
         assert InMemoryBackend().get("missing") is None
@@ -170,6 +211,22 @@ class TestRedisBackend:
         client = FakeRedis()
         RedisBackend(client).incr("counter", 1.0)
         assert client.expiry_ms == {}
+
+    def test_incr_with_ttl_is_one_round_trip_with_a_pipeline(self) -> None:
+        client = PipelineRedis()
+        backend = RedisBackend(client)
+        assert backend.incr("counter", 2.0, ttl=120.0) == 2.0
+        assert backend.incr("counter", 0.5, ttl=120.0) == 2.5
+        assert client.round_trips == 2
+        assert client.expiry_ms["pyresilience:counter"] == 120_000
+        # No MULTI/EXEC around the two commands
+        assert client.transactions == [False, False]
+
+    def test_incr_without_ttl_needs_no_pipeline(self) -> None:
+        client = PipelineRedis()
+        assert RedisBackend(client).incr("counter", 1.0) == 1.0
+        assert client.round_trips == 1
+        assert client.transactions == []
 
     def test_tiny_ttl_is_at_least_one_millisecond(self) -> None:
         client = FakeRedis()

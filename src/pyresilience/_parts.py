@@ -85,6 +85,7 @@ def _build_parts(config: ResilienceConfig, state_key: str = "") -> _Parts:
                 [bucket.capacity for bucket in core.buckets],
                 [bucket.period for bucket in core.buckets],
                 shared.fail_open,
+                shared.sync_interval,
             )
             parts.limiter_core = core
         elif _needs_weighted_limiter(limiter_cfg):

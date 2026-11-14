@@ -70,7 +70,7 @@ All patterns work together, with a unified event system for observability.
 - **Graceful shutdown** — drain in-flight calls with configurable timeout
 - **Optional performance backends** — uvloop + orjson
 - **Python 3.9+** — CI tests 3.10 through 3.15 on Linux, macOS and Windows
-- **Production/Stable** — 797 tests, 98% branch coverage, 10.4x faster than tenacity
+- **Production/Stable** — 846 tests, 98% branch coverage, 10.4x faster than tenacity
 
 ## Why Not Just Tenacity + PyBreaker?
 

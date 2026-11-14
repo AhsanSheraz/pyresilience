@@ -57,6 +57,11 @@ def _shared(backend: Any, **kwargs: Any) -> SharedStateConfig:
     return SharedStateConfig(backend=backend, key="svc", sync_interval=0, **kwargs)
 
 
+def _end_pause(call: Any) -> None:
+    """Let the next call try a failed backend again without waiting for the pause."""
+    call._executor._weighted_limiter._core.shared._down_until = time.monotonic() - 0.001
+
+
 def _counter(backend: InMemoryBackend, limit: str) -> float:
     """Value of the current shared window of a limit (0.0 when absent)."""
     names = backend.keys()
@@ -253,6 +258,7 @@ class TestSharedRateLimitBackendFailure:
 
         with caplog.at_level(logging.DEBUG, logger="pyresilience"):
             assert call() == "ok"
+            _end_pause(call)
             assert call() == "ok"
             # The local limit still applies
             with pytest.raises(RateLimitExceededError, match="calls"):
@@ -335,6 +341,7 @@ class TestSharedRateLimitBackendFailure:
         with caplog.at_level(logging.WARNING, logger="pyresilience"):
             call()
             backend.down = False
+            _end_pause(call)
             call()
             backend.down = True
             call()

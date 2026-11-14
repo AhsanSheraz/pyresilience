@@ -170,6 +170,8 @@ def send_batch(items: list) -> None: ...
 
 A call whose cost is larger than a limit's whole capacity can never pass and is rejected immediately, without waiting.
 
+Waiting callers are not queued. With `max_wait`, a call with a large cost can be overtaken by smaller calls that keep taking the capacity it is waiting for, and is rejected when its wait runs out.
+
 ### Token Limits for LLM APIs
 
 LLM providers limit requests per minute **and** tokens per minute. Reserve an estimate before the call and settle the difference afterwards:
@@ -224,6 +226,8 @@ What the limiter does with the report:
 | 0 tokens remaining, resets in 12s | Pauses for 12 seconds |
 
 A level is only ever lowered by feedback, never raised. You can write your own function returning a `RateLimitFeedback(retry_after=..., remaining={...})`.
+
+`rate_limit_feedback()` reads the headers from `result.headers`, or from `exc.response.headers` for a raised error. Parsed result objects of LLM SDKs usually carry no headers, so with those the limiter only learns from errors unless the function returns the SDK's raw response.
 
 ### Charging Retries
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import gc
 import threading
 import time
@@ -12,6 +13,7 @@ import pytest
 from pyresilience import ResilienceTimeoutError, TimeoutConfig, resilient
 
 STREAM = TimeoutConfig(seconds=5.0, stream_idle_seconds=5.0)
+REQUEST_ID: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="unset")
 
 
 class ManagedStream:
@@ -125,6 +127,21 @@ class TestSyncStreamConcurrency:
         del wrapped
         gc.collect()
         assert _wait_until(lambda: not reader.is_alive())
+
+    def test_stream_body_sees_the_callers_context_variables(self) -> None:
+        @resilient(timeout=STREAM)
+        def stream() -> Iterator[str]:
+            def items() -> Iterator[str]:
+                yield REQUEST_ID.get()
+                yield REQUEST_ID.get()
+
+            return items()
+
+        token = REQUEST_ID.set("req-123")
+        try:
+            assert list(stream()) == ["req-123", "req-123"]
+        finally:
+            REQUEST_ID.reset(token)
 
     def test_no_thread_before_the_first_item_is_requested(self) -> None:
         @resilient(timeout=STREAM)

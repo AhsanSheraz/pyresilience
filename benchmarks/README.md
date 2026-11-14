@@ -35,6 +35,7 @@ PYTHONPATH=src .bench-venv/bin/python benchmarks/full_benchmark.py
 - To judge a change, compare relative results on one machine with
   `bench_compare.py`. It alternates short rounds between the two trees, which
   cancels load drift; differences of a few percent are still run-to-run noise.
+  Read the median column: the minimum is not stable for the sync timeout rows.
 - Sync timeouts run the call in a worker thread, so any configuration with a
   `TimeoutConfig` on a sync function costs tens of microseconds per call. Async
   timeouts do not.

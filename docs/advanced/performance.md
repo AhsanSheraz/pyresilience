@@ -62,56 +62,56 @@ compare within this table only.
 | Configuration | Python 3.14 | Python 3.15 |
 |---------------|------------:|------------:|
 | bare function (baseline) | 0.03μs | 0.02μs |
-| Rate limiter: plain (one token per call) | 1.67μs | 1.44μs |
-| Rate limiter: weighted cost | 2.69μs | 2.27μs |
-| Rate limiter: three limits at once | 3.25μs | 2.65μs |
-| Rate limiter: token reconcile + server feedback | 5.49μs | 4.63μs |
-| Rate limiter: shared through a backend (in-memory) | 4.22μs | 4.02μs |
-| Fallback: plain handler | 1.28μs | 1.19μs |
-| Fallback: alternatives + cooldown (primary healthy) | 1.76μs | 1.56μs |
-| Fallback: primary cooling down, alternative used | 1.77μs | 1.55μs |
-| Shared circuit breaker + retry budget | 2.06μs | 1.76μs |
-| Registry: state shared by sync and async (sync call) | 2.66μs | 2.22μs |
-| Registry: state shared by sync and async (async call) | 3.83μs | 2.87μs |
-| Timeout: per attempt (sync, worker thread) | 23.83μs | 33.01μs |
-| Timeout: per attempt + overall deadline (sync) | 23.75μs | 33.11μs |
-| Stream idle timeout (async, per item) | 3.07μs | 2.58μs |
+| Rate limiter: plain (one token per call) | 1.57μs | 1.23μs |
+| Rate limiter: weighted cost | 2.47μs | 1.86μs |
+| Rate limiter: three limits at once | 2.68μs | 2.21μs |
+| Rate limiter: token reconcile + server feedback | 4.73μs | 3.74μs |
+| Rate limiter: shared through a backend (in-memory) | 3.96μs | 3.26μs |
+| Fallback: plain handler | 1.19μs | 0.93μs |
+| Fallback: alternatives + cooldown (primary healthy) | 1.66μs | 1.27μs |
+| Fallback: primary cooling down, alternative used | 1.60μs | 1.24μs |
+| Shared circuit breaker + retry budget | 1.88μs | 1.34μs |
+| Registry: state shared by sync and async (sync call) | 2.27μs | 1.77μs |
+| Registry: state shared by sync and async (async call) | 2.99μs | 2.36μs |
+| Timeout: per attempt (sync, worker thread) | 21.11μs | 21.34μs |
+| Timeout: per attempt + overall deadline (sync) | 22.39μs | 20.88μs |
+| Stream idle timeout (async, per item) | 2.51μs | 1.96μs |
 
 What the numbers say:
 
-- **Weighted and multi-limit rate limiting** costs about 1.0 to 1.6μs more than the plain limiter. The plain limiter is still used whenever the configuration needs nothing more.
-- **Reconciliation and server feedback** wrap the call to observe its result, which adds about 2 to 3μs.
+- **Weighted and multi-limit rate limiting** costs about 0.6 to 1.1μs more than the plain limiter. The plain limiter is still used whenever the configuration needs nothing more.
+- **Reconciliation and server feedback** wrap the call to observe its result, which adds about 2μs.
 - **Shared rate limits** add one backend round trip per call. The figure above is for the in-memory backend; with Redis expect the network round trip (typically 0.2 to 1 ms).
 - **Shared circuit breaker and retry budget** cost nothing on the call path beyond two counters; the exchange with the backend runs in a background thread.
 - **The overall deadline** adds no measurable cost to a call with a timeout. Sync timeouts are dominated by the hop through a worker thread; async timeouts are not.
-- **The stream idle timeout** costs about 2 to 3μs per item for async streams (`asyncio.wait_for` per item).
+- **The stream idle timeout** costs about 2 to 2.5μs per item for async streams (`asyncio.wait_for` per item). A sync stream hands every item from its reader thread to the caller, which cost about 15μs per item on this machine.
 
 ### Hot Path Check Against 0.4.1
 
 `benchmarks/bench_compare.py` times the `bench_overhead.py` configurations against two source
 trees in short alternating rounds. Working tree against 0.4.1, Python 3.14, same machine,
-fastest of 25 rounds for each side:
+median of 25 rounds for each side:
 
 | Configuration | 0.4.1 | 0.5.0 | Change |
 |---------------|------:|------:|-------:|
-| `@resilient` (default retry) | 1.01μs | 0.98μs | -3.1% |
-| Retry only | 1.28μs | 1.25μs | -2.1% |
-| Retry + `ignore_on` | 1.27μs | 1.29μs | +1.9% |
-| Retry + `delay_func` | 1.28μs | 1.27μs | -0.7% |
-| Retry + timeout (sync) | 19.30μs | 18.61μs | -3.6% |
-| Retry + circuit breaker | 1.84μs | 1.79μs | -2.8% |
-| All patterns (no cache) | 21.97μs | 22.01μs | +0.2% |
-| Cache (hit) | 2.43μs | 2.42μs | -0.4% |
+| `@resilient` (default retry) | 1.01μs | 1.00μs | -0.6% |
+| Retry only | 1.26μs | 1.26μs | -0.4% |
+| Retry + `ignore_on` | 1.26μs | 1.27μs | +0.8% |
+| Retry + `delay_func` | 1.28μs | 1.26μs | -1.6% |
+| Retry + timeout (sync) | 21.39μs | 22.01μs | +2.9% |
+| Retry + circuit breaker | 1.81μs | 1.82μs | +0.1% |
+| All patterns (no cache) | 23.74μs | 23.81μs | +0.3% |
+| Cache (hit) | 2.37μs | 2.36μs | -0.1% |
 
-No configuration is slower than 0.4.1 beyond run-to-run noise: a second run of 25 rounds gave
-changes between -3.8% and +4.3%, with different rows on either side of zero. Features that are
-not configured cost nothing measurable.
+Every configuration is within 3% of 0.4.1, which is run-to-run noise. The table shows medians
+because the fastest round is not stable for the sync timeout rows, where every call hops
+through a worker thread. Features that are not configured cost nothing measurable.
 
 ### Python 3.15
 
 Python 3.15 is supported and tested in CI. On the same machine most benchmark
-configurations ran 10 to 25% faster than on Python 3.14 (retry + circuit breaker: 1.70μs
-against 2.27μs; weighted rate limiter: 2.27μs against 2.69μs). Sync timeouts do not improve:
+configurations ran 18 to 29% faster than on Python 3.14 (retry + circuit breaker: 1.31μs
+against 1.72μs; weighted rate limiter: 1.86μs against 2.47μs). Sync timeouts do not improve:
 they are bound by the hop through a worker thread.
 
 ## Optional Performance Backends

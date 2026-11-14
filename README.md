@@ -362,22 +362,22 @@ Cost of one successful decorated call with the 0.5.0 features, from [`benchmarks
 | Configuration | Python 3.14 | Python 3.15 |
 |---------------|------------:|------------:|
 | bare function (baseline) | 0.03μs | 0.02μs |
-| Rate limiter: plain (one token per call) | 1.67μs | 1.44μs |
-| Rate limiter: weighted cost | 2.69μs | 2.27μs |
-| Rate limiter: three limits at once | 3.25μs | 2.65μs |
-| Rate limiter: token reconcile + server feedback | 5.49μs | 4.63μs |
-| Rate limiter: shared through a backend (in-memory) | 4.22μs | 4.02μs |
-| Fallback: plain handler | 1.28μs | 1.19μs |
-| Fallback: alternatives + cooldown (primary healthy) | 1.76μs | 1.56μs |
-| Fallback: primary cooling down, alternative used | 1.77μs | 1.55μs |
-| Shared circuit breaker + retry budget | 2.06μs | 1.76μs |
-| Registry: state shared by sync and async (sync call) | 2.66μs | 2.22μs |
-| Registry: state shared by sync and async (async call) | 3.83μs | 2.87μs |
-| Timeout: per attempt (sync, worker thread) | 23.83μs | 33.01μs |
-| Timeout: per attempt + overall deadline (sync) | 23.75μs | 33.11μs |
-| Stream idle timeout (async, per item) | 3.07μs | 2.58μs |
+| Rate limiter: plain (one token per call) | 1.57μs | 1.23μs |
+| Rate limiter: weighted cost | 2.47μs | 1.86μs |
+| Rate limiter: three limits at once | 2.68μs | 2.21μs |
+| Rate limiter: token reconcile + server feedback | 4.73μs | 3.74μs |
+| Rate limiter: shared through a backend (in-memory) | 3.96μs | 3.26μs |
+| Fallback: plain handler | 1.19μs | 0.93μs |
+| Fallback: alternatives + cooldown (primary healthy) | 1.66μs | 1.27μs |
+| Fallback: primary cooling down, alternative used | 1.60μs | 1.24μs |
+| Shared circuit breaker + retry budget | 1.88μs | 1.34μs |
+| Registry: state shared by sync and async (sync call) | 2.27μs | 1.77μs |
+| Registry: state shared by sync and async (async call) | 2.99μs | 2.36μs |
+| Timeout: per attempt (sync, worker thread) | 21.11μs | 21.34μs |
+| Timeout: per attempt + overall deadline (sync) | 22.39μs | 20.88μs |
+| Stream idle timeout (async, per item) | 2.51μs | 1.96μs |
 
-The existing hot paths are unchanged: `benchmarks/bench_compare.py` (working tree against 0.4.1, fastest of 25 alternating rounds) puts every `bench_overhead.py` configuration between -3.6% and +1.9% of 0.4.1, which is run-to-run noise.
+The existing hot paths are unchanged: `benchmarks/bench_compare.py` (working tree against 0.4.1, median of 25 alternating rounds) puts every `bench_overhead.py` configuration between -1.6% and +2.9% of 0.4.1, which is run-to-run noise.
 
 ## Comparison
 

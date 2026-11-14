@@ -139,11 +139,13 @@ Attempt 3: [── 7s left ──]   TIMEOUT!          next wait (4s) does not f
 Total: 30s max
 ```
 
-When the time left cannot cover the next retry wait, the call stops retrying at once and raises `ResilienceTimeoutError`, chained from the last error. It does not sleep past the deadline. The same applies to `per_attempt=False`. If a fallback is configured for the error, it is used instead.
+When the time left cannot cover the next retry wait, the call stops retrying at once and raises `ResilienceTimeoutError`, chained from the last error. It does not sleep past the deadline. The same applies to `per_attempt=False`. A fallback is used instead when `fallback_on` matches the timeout or the error that was being retried; a handler set up for the retried error receives that error.
 
 Two details: an attempt that is cut short by the deadline emits one `TIMEOUT` event, whose detail names the time the attempt really had. And with a bulkhead, the wait for a slot after a retry sleep is bounded by `BulkheadConfig.max_wait`, not by the deadline; if the deadline has passed when the slot is granted, the call stops without another attempt.
 
 With `retry_on_result`, the last result is returned when the budget runs out, as it is when attempts run out.
+
+The deadline covers the attempts and the retry waits. It does not cover the wait for rate-limit capacity or a bulkhead slot before the first attempt, and it does not bound [fallback alternatives](fallback.md): give an alternative its own `@resilient(timeout=...)`.
 
 ### Stream Idle Timeout
 
@@ -160,7 +162,9 @@ async for chunk in await stream_completion("hello"):
 
 - Applies when the function returns an iterator, generator, async iterator or async generator. Other results are returned unchanged.
 - The wait for the first item is the time to first token.
-- Each sync stream is read by its own daemon thread, started with the first item, so any number of streams can run at once. A read that is abandoned keeps that thread busy until the underlying stream returns.
+- Each sync stream is read by its own daemon thread, started with the first item, so any number of streams can run at once. A read that is abandoned keeps that thread busy, and the underlying stream open, until the read returns.
+- The body of a sync stream runs in a copy of the caller's context, taken at the first item: context variables set by the caller are visible in it, changes made inside it do not reach the caller.
+- Handing each item of a sync stream from one thread to the other costs far more than the async guard (see [Performance](../advanced/performance.md)). It does not matter for network streams; think twice for streams of many small in-memory items.
 - After a timeout the stream is finished. Retries and fallbacks do not cover a stream that already started.
 - `with` / `async with`, `close()`, `aclose()` and other attributes are passed through to the wrapped stream.
 
